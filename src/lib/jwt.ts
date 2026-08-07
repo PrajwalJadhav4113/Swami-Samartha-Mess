@@ -89,7 +89,7 @@ export async function verifyToken(token: string): Promise<Record<string, any> | 
     const isValid = await crypto.subtle.verify(
       "HMAC",
       cryptoKey,
-      signatureBytes,
+      signatureBytes as any,
       dataBytes
     );
 
