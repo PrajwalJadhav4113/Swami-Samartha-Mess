@@ -21,7 +21,7 @@ if (!global.mongoose) {
   global.mongoose = { conn: null, promise: null };
 }
 
-const cached = global.mongoose;
+const cached = global.mongoose as MongooseCache;
 
 export async function connectToDatabase() {
   if (cached.conn) {

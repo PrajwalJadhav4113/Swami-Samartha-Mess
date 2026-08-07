@@ -121,13 +121,13 @@ function LoginForm() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder={role === "owner" ? "admin" : "customer_username"}
+                placeholder={role === "owner" ? "swami" : "customer_username"}
                 className="w-full pl-10 pr-4 py-3 bg-muted border border-transparent rounded-xl focus:border-primary/30 focus:bg-card focus:outline-none transition text-sm font-medium"
               />
             </div>
             {role === "owner" && username === "" && (
               <span className="text-[10px] text-muted-foreground block mt-1">
-                * Note: If running first time, use `admin` / `admin123` to seed the database.
+                * Note: If running first time, use `swami` / `SwamiS123` to seed the database.
               </span>
             )}
           </div>

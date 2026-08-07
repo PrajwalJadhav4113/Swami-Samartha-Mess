@@ -22,13 +22,13 @@ export async function POST(request: Request) {
     let userDetails = null;
 
     if (role === "owner") {
-      // Check if any owner exists. If not, auto-seed the default owner admin/admin123
+      // Check if any owner exists. If not, auto-seed the default owner swami/SwamiS123
       const count = await User.countDocuments({ role: "owner" });
       if (count === 0) {
-        const passwordHash = await bcrypt.hash("admin123", 10);
+        const passwordHash = await bcrypt.hash("SwamiS123", 10);
         await User.create({
           name: "Owner Admin",
-          username: "admin",
+          username: "swami",
           passwordHash,
           role: "owner",
         });
