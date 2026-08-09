@@ -4,6 +4,7 @@ import Bill from "@/models/Bill";
 import Payment from "@/models/Payment";
 import { verifyToken } from "@/lib/jwt";
 import { cookies } from "next/headers";
+import { getBillDetailedLogs } from "@/lib/billing-helper";
 
 async function isOwner() {
   const cookieStore = await cookies();
@@ -23,7 +24,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "Bill not found" }, { status: 404 });
     }
 
-    return NextResponse.json(bill);
+    const dailyRecords = await getBillDetailedLogs(
+      bill.customerId._id.toString(),
+      bill.billingPeriodStart,
+      bill.billingPeriodEnd
+    );
+
+    return NextResponse.json({
+      ...bill.toObject(),
+      dailyRecords,
+    });
   } catch (error: any) {
     console.error("Get Bill Detail API Error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

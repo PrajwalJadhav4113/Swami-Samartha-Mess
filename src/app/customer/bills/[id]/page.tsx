@@ -22,6 +22,24 @@ interface ExtraItemDetail {
   amount: number;
 }
 
+interface DailyRecord {
+  date: string;
+  dayOfWeek: string;
+  morningMeal: "none" | "half" | "full";
+  morningPrice: number;
+  nightMeal: "none" | "half" | "full";
+  nightPrice: number;
+  isHoliday: boolean;
+  holidayReason?: string;
+  extras: {
+    name: string;
+    quantity: number;
+    price: number;
+    amount: number;
+  }[];
+  totalPrice: number;
+}
+
 interface BillData {
   _id: string;
   billNumber: string;
@@ -43,6 +61,7 @@ interface BillData {
   amountPaid: number;
   notes?: string;
   createdAt: string;
+  dailyRecords?: DailyRecord[];
 }
 
 interface BusinessSettings {
@@ -66,14 +85,9 @@ export default function CustomerBillDetailPage({ params }: { params: Promise<{ i
     async function loadBillAndSettings() {
       setLoading(true);
       try {
-        const billRes = await fetch(`/api/customer/bills`); // Fetching customer bills list checks security
-        if (!billRes.ok) throw new Error("Invoice list not loadable");
-        const list: BillData[] = await billRes.json();
-        const found = list.find((b) => b._id === id);
-        
-        if (!found) {
-          throw new Error("Invoice not found or unauthorized access");
-        }
+        const billRes = await fetch(`/api/customer/bills/${id}`);
+        if (!billRes.ok) throw new Error("Invoice not found or unauthorized access");
+        const found = await billRes.json();
         setBill(found);
 
         const settingsRes = await fetch("/api/owner/settings");
@@ -140,36 +154,49 @@ export default function CustomerBillDetailPage({ params }: { params: Promise<{ i
     doc.text(`Mobile: ${bill.customerId?.mobile || "-"}`, 120, 57);
     doc.text(`Address: ${bill.customerId?.address || "-"}`, 120, 63);
 
-    // Itemized Table Columns
+    // 3. Daily Ledger Table Columns
     const tableBody: any[] = [];
 
-    // Add meals
-    bill.mealDetails.forEach((m) => {
-      let label = m.type;
-      if (m.type === "morning_full") label = "Morning Full Tiffin";
-      else if (m.type === "morning_half") label = "Morning Half Tiffin";
-      else if (m.type === "night_full") label = "Night Full Tiffin";
-      else if (m.type === "night_half") label = "Night Half Tiffin";
+    bill.dailyRecords?.forEach((record) => {
+      const dateObj = new Date(record.date);
+      const formattedDate = `${dateObj.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+      })} (${record.dayOfWeek.substring(0, 3)})`;
 
-      tableBody.push([label, m.quantity, `Rs. ${m.rate}`, `Rs. ${m.amount}`]);
+      let mealsText = "";
+      if (record.isHoliday) {
+        mealsText = `Holiday: ${record.holidayReason || "Closed"}`;
+      } else {
+        const mealParts: string[] = [];
+        if (record.morningMeal !== "none") {
+          mealParts.push(`Morning: ${record.morningMeal === "full" ? "Full" : "Half"} (Rs. ${record.morningPrice})`);
+        }
+        if (record.nightMeal !== "none") {
+          mealParts.push(`Night: ${record.nightMeal === "full" ? "Full" : "Half"} (Rs. ${record.nightPrice})`);
+        }
+        mealsText = mealParts.join("\n") || "No meals";
+      }
+
+      const extrasText = record.extras
+        .map((e) => `${e.name} x${e.quantity} (Rs. ${e.amount})`)
+        .join("\n") || "-";
+
+      tableBody.push([formattedDate, mealsText, extrasText, `Rs. ${record.totalPrice}`]);
     });
 
-    // Add extras
-    bill.extraItemsDetails.forEach((e) => {
-      tableBody.push([e.name, e.quantity, `Rs. ${e.rate}`, `Rs. ${e.amount}`]);
-    });
-
+    // Auto Table Generation
     autoTable(doc, {
       startY: 72,
-      head: [["Item Name / Service", "Qty", "Rate", "Total"]],
+      head: [["Date & Day", "Tiffin Meals", "Extras", "Cost"]],
       body: tableBody,
       headStyles: { fillColor: [99, 102, 241], fontSize: 9, font: "helvetica", fontStyle: "bold" },
-      bodyStyles: { fontSize: 9, font: "helvetica" },
+      bodyStyles: { fontSize: 8, font: "helvetica" },
       columnStyles: {
-        0: { cellWidth: 80 },
-        1: { cellWidth: 20, halign: "center" },
-        2: { cellWidth: 40, halign: "right" },
-        3: { cellWidth: 42, halign: "right" },
+        0: { cellWidth: 32 },
+        1: { cellWidth: 68 },
+        2: { cellWidth: 62 },
+        3: { cellWidth: 28, halign: "right" },
       },
     });
 
@@ -223,16 +250,17 @@ export default function CustomerBillDetailPage({ params }: { params: Promise<{ i
     doc.setFont("helvetica", "bold");
     doc.text("Net Balance Due:", 120, currentY);
     doc.text(`Rs. ${bill.finalTotal - bill.amountPaid}`, 196, currentY, { align: "right" });
+    currentY += 10;
 
     // Payment notice
     if (settings?.upiId) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
-      doc.text(`Please pay via UPI to: ${settings.upiId}`, 14, finalY + 5);
-      doc.text("Thank you for your business!", 14, finalY + 11);
+      doc.text(`Please pay via UPI to: ${settings.upiId}`, 14, currentY);
+      doc.text("Thank you for your business!", 14, currentY + 6);
     } else {
       doc.setFontSize(8);
-      doc.text("Thank you for your business!", 14, finalY + 5);
+      doc.text("Thank you for your business!", 14, currentY);
     }
 
     doc.save(`Invoice-${bill.billNumber}.pdf`);
@@ -344,47 +372,79 @@ export default function CustomerBillDetailPage({ params }: { params: Promise<{ i
           </div>
         </div>
 
-        {/* Itemized Table Breakdown */}
+        {/* Daily Ledger Breakdown */}
         <div className="space-y-4">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Itemized Breakdown</h3>
-          <div className="border border-border rounded-xl overflow-hidden">
-            <table className="w-full text-left text-xs md:text-sm font-medium">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Daily Ledger (Day-by-Day)</h3>
+          <div className="border border-border rounded-xl overflow-hidden overflow-x-auto">
+            <table className="w-full text-left text-xs md:text-sm font-medium min-w-[500px]">
               <thead>
                 <tr className="border-b border-border bg-muted/30 text-muted-foreground text-[10px] font-bold uppercase">
-                  <th className="px-5 py-3">Description</th>
-                  <th className="px-5 py-3 text-center">Quantity</th>
-                  <th className="px-5 py-3 text-right">Rate</th>
-                  <th className="px-5 py-3 text-right">Amount</th>
+                  <th className="px-5 py-3">Date & Day</th>
+                  <th className="px-5 py-3">Tiffin Meals</th>
+                  <th className="px-5 py-3">Extra Items</th>
+                  <th className="px-5 py-3 text-right">Daily Cost</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {/* Meals */}
-                {bill.mealDetails.map((m, idx) => {
-                  let label = m.type;
-                  if (m.type === "morning_full") label = "Morning Full Tiffin";
-                  else if (m.type === "morning_half") label = "Morning Half Tiffin";
-                  else if (m.type === "night_full") label = "Night Full Tiffin";
-                  else if (m.type === "night_half") label = "Night Half Tiffin";
+                {bill.dailyRecords?.map((record, idx) => {
+                  const hasMeals = record.morningMeal !== "none" || record.nightMeal !== "none";
+                  const hasExtras = record.extras.length > 0;
+                  
+                  const dateObj = new Date(record.date);
+                  const formattedDate = dateObj.toLocaleDateString("en-IN", {
+                    day: "2-digit",
+                    month: "short",
+                  });
+                  const shortDay = record.dayOfWeek.substring(0, 3);
 
                   return (
-                    <tr key={`meal-${idx}`} className="hover:bg-muted/10">
-                      <td className="px-5 py-3.5 font-bold">{label}</td>
-                      <td className="px-5 py-3.5 text-center">{m.quantity}</td>
-                      <td className="px-5 py-3.5 text-right text-muted-foreground">₹{m.rate}</td>
-                      <td className="px-5 py-3.5 text-right font-bold">₹{m.amount}</td>
+                    <tr 
+                      key={`day-${idx}`} 
+                      className={`hover:bg-muted/10 transition ${record.isHoliday ? "bg-zinc-50/50 dark:bg-zinc-900/30 text-muted-foreground" : ""}`}
+                    >
+                      <td className="px-5 py-3.5 font-bold whitespace-nowrap">
+                        {formattedDate} ({shortDay})
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {record.isHoliday ? (
+                          <span className="text-[10px] bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 px-2 py-0.5 rounded font-bold uppercase tracking-wide">
+                            Holiday: {record.holidayReason || "Mess Closed"}
+                          </span>
+                        ) : (
+                          <div className="space-y-0.5">
+                            {record.morningMeal !== "none" && (
+                              <div className="text-xs">
+                                <span className="font-bold">Morning:</span> {record.morningMeal === "full" ? "Full" : "Half"} (₹{record.morningPrice})
+                              </div>
+                            )}
+                            {record.nightMeal !== "none" && (
+                              <div className="text-xs">
+                                <span className="font-bold">Night:</span> {record.nightMeal === "full" ? "Full" : "Half"} (₹{record.nightPrice})
+                              </div>
+                            )}
+                            {!hasMeals && <span className="text-xs text-muted-foreground/60 italic">No meals</span>}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {hasExtras ? (
+                          <div className="space-y-0.5">
+                            {record.extras.map((extra, eIdx) => (
+                              <div key={eIdx} className="text-xs">
+                                {extra.name} x {extra.quantity} (₹{extra.amount})
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/60 italic">-</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5 text-right font-extrabold whitespace-nowrap">
+                        ₹{record.totalPrice}
+                      </td>
                     </tr>
                   );
                 })}
-
-                {/* Extras */}
-                {bill.extraItemsDetails.map((e, idx) => (
-                  <tr key={`extra-${idx}`} className="hover:bg-muted/10">
-                    <td className="px-5 py-3.5 font-semibold text-foreground">{e.name}</td>
-                    <td className="px-5 py-3.5 text-center">{e.quantity}</td>
-                    <td className="px-5 py-3.5 text-right text-muted-foreground">₹{e.rate}</td>
-                    <td className="px-5 py-3.5 text-right font-bold">₹{e.amount}</td>
-                  </tr>
-                ))}
               </tbody>
             </table>
           </div>
