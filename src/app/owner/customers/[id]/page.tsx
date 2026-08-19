@@ -30,9 +30,11 @@ interface CustomerDetail {
   mobile: string;
   address: string;
   username: string;
-  status: "active" | "inactive";
+  status: "pending" | "active" | "inactive" | "rejected";
   joiningDate: string;
   notes?: string;
+  defaultRate?: number;
+  fixedDiscount?: number;
 }
 
 interface MealRecord {
@@ -101,7 +103,9 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
   const [editUsername, setEditUsername] = useState("");
   const [editPassword, setEditPassword] = useState("");
   const [editNotes, setEditNotes] = useState("");
-  const [editStatus, setEditStatus] = useState<"active" | "inactive">("active");
+  const [editStatus, setEditStatus] = useState<"pending" | "active" | "inactive" | "rejected">("active");
+  const [editDefaultRate, setEditDefaultRate] = useState<number | "">("");
+  const [editFixedDiscount, setEditFixedDiscount] = useState<number>(0);
   const [updating, setUpdating] = useState(false);
 
   // Add holiday fields
@@ -162,6 +166,8 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
       setEditUsername(data.username);
       setEditNotes(data.notes || "");
       setEditStatus(data.status);
+      setEditDefaultRate(data.defaultRate || "");
+      setEditFixedDiscount(data.fixedDiscount || 0);
     } catch (err: any) {
       error(err.message || "Failed to load customer profile");
       router.push("/owner/customers");
@@ -233,6 +239,16 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+      });
+
+      // Update Pricing
+      await fetch(`/api/owner/customers/${id}/pricing`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          defaultRate: editDefaultRate !== "" ? Number(editDefaultRate) : null,
+          fixedDiscount: Number(editFixedDiscount),
+        })
       });
 
       const data = await res.json();
@@ -485,6 +501,32 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
                     type="text"
                     value={editNotes}
                     onChange={(e) => setEditNotes(e.target.value)}
+                    className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
+                    Custom Thali Rate (₹)
+                  </label>
+                  <input
+                    type="number"
+                    value={editDefaultRate}
+                    onChange={(e) => setEditDefaultRate(e.target.value ? Number(e.target.value) : "")}
+                    placeholder="Leave blank for global default"
+                    className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
+                    Fixed Monthly Discount (₹)
+                  </label>
+                  <input
+                    type="number"
+                    value={editFixedDiscount}
+                    onChange={(e) => setEditFixedDiscount(Number(e.target.value))}
                     className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
                   />
                 </div>

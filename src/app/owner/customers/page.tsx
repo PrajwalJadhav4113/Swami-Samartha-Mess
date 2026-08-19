@@ -13,7 +13,7 @@ interface CustomerData {
   mobile: string;
   address: string;
   username: string;
-  status: "active" | "inactive";
+  status: "pending" | "active" | "inactive" | "rejected";
   joiningDate: string;
   notes?: string;
 }
@@ -176,6 +176,8 @@ function CustomersListContent() {
               <option value="">All Statuses</option>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
+              <option value="pending">Pending</option>
+              <option value="rejected">Rejected</option>
             </select>
           </div>
         </div>
@@ -406,6 +408,44 @@ function CustomersListContent() {
                   </span>
                   
                   <div className="flex gap-2">
+                    {c.status === "pending" && (
+                      <>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/owner/customers/${c._id}/status`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ status: 'active' })
+                              });
+                              if (res.ok) {
+                                fetchCustomers(currentPage, search, statusFilter);
+                              }
+                            } catch (e) {}
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-semibold rounded-lg transition"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/owner/customers/${c._id}/status`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ status: 'rejected' })
+                              });
+                              if (res.ok) {
+                                fetchCustomers(currentPage, search, statusFilter);
+                              }
+                            } catch (e) {}
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 text-xs font-semibold rounded-lg transition"
+                        >
+                          Reject
+                        </button>
+                      </>
+                    )}
                     <Link
                       href={`/owner/customers/${c._id}`}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border bg-card hover:bg-muted text-xs font-semibold rounded-lg transition"

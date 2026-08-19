@@ -10,7 +10,7 @@
   --popover: 0 0% 100%;
   --popover-foreground: 224 71.4% 4.1%;
   
-  --primary: 263.4 70% 50.4%;
+  --primary: 24.6 95% 50%;
   --primary-foreground: 210 20% 98%;
   
   --secondary: 220 14.3% 95.9%;
@@ -19,19 +19,19 @@
   --muted: 220 14.3% 95.9%;
   --muted-foreground: 220 8.9% 46.1%;
   
-  --accent: 262 80% 96%;
-  --accent-foreground: 263 70% 30%;
+  --accent: 24 95% 95%;
+  --accent-foreground: 24 95% 30%;
   
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 20% 98%;
   
   --border: 220 13% 91%;
   --input: 220 13% 91%;
-  --ring: 263.4 70% 50.4%;
+  --ring: 24.6 95% 50%;
   
   --radius: 0.75rem;
 
-  --chart-1: 263 70% 50%;
+  --chart-1: 24 95% 50%;
   --chart-2: 190 90% 45%;
   --chart-3: 340 75% 55%;
   --chart-4: 45 95% 50%;
@@ -48,7 +48,7 @@
   --popover: 224 71% 5%;
   --popover-foreground: 210 20% 98%;
   
-  --primary: 263.4 90% 60%;
+  --primary: 24.6 95% 60%;
   --primary-foreground: 210 20% 98%;
   
   --secondary: 215 27.9% 12%;
@@ -57,15 +57,15 @@
   --muted: 215 27.9% 12%;
   --muted-foreground: 217.9 10.6% 64.9%;
   
-  --accent: 263 60% 15%;
-  --accent-foreground: 263 90% 85%;
+  --accent: 24 60% 15%;
+  --accent-foreground: 24 95% 85%;
   
   --destructive: 0 62.8% 30.6%;
   --destructive-foreground: 210 20% 98%;
   
   --border: 215 27.9% 16%;
   --input: 215 27.9% 16%;
-  --ring: 263.4 90% 60%;
+  --ring: 24.6 95% 60%;
 
   --chart-1: 263 90% 60%;
   --chart-2: 190 85% 50%;
@@ -130,7 +130,7 @@ body {
 
 /* Glow Effect */
 .glow-primary {
-  box-shadow: 0 0 25px -5px rgba(139, 92, 246, 0.25);
+  box-shadow: 0 0 25px -5px rgba(249, 115, 22, 0.25);
 }
 
 /* Custom Scrollbars */

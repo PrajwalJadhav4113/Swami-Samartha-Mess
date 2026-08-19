@@ -36,6 +36,7 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   { name: "Customers", href: "/owner/customers", icon: Users },
   { name: "Menu Master", href: "/owner/menu", icon: Menu },
   { name: "Holidays", href: "/owner/holidays", icon: CalendarDays },
+  { name: "Mess Closure", href: "/owner/mess-closure", icon: CalendarDays },
   { name: "Billing Engine", href: "/owner/billing", icon: Receipt },
   { name: "Payments", href: "/owner/payments", icon: CircleDollarSign },
   { name: "Reports", href: "/owner/reports", icon: BarChart3 },

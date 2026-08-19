@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document, Model } from "mongoose";
 
 export interface IHoliday extends Document {
-  customerId?: mongoose.Types.ObjectId; // Nullable: if null, applies to ALL customers (shop closed)
+  customerId?: mongoose.Types.ObjectId | null; // Nullable: if null, applies to ALL customers (shop closed)
   startDate: Date; // Start of holiday
   endDate: Date; // End of holiday (inclusive)
   reason: string;

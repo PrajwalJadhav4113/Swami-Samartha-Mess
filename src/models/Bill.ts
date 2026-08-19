@@ -27,6 +27,7 @@ export interface IBill extends Document {
   finalTotal: number;
   paymentStatus: "pending" | "paid" | "partially_paid";
   amountPaid: number;
+  isCarriedForward: boolean;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -65,6 +66,7 @@ const BillSchema = new Schema<IBill>(
       index: true,
     },
     amountPaid: { type: Number, required: true, default: 0 },
+    isCarriedForward: { type: Boolean, required: true, default: false },
     notes: { type: String },
   },
   { timestamps: true }

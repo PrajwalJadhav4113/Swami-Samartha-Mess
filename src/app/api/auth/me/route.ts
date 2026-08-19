@@ -33,7 +33,9 @@ export async function GET() {
       if (!customer || customer.status !== "active") {
         return NextResponse.json({ authenticated: false }, { status: 401 });
       }
-      return NextResponse.json({ authenticated: true, user: customer });
+      const customerObj = customer.toObject();
+      (customerObj as any).role = "customer";
+      return NextResponse.json({ authenticated: true, user: customerObj });
     }
   } catch (error: any) {
     console.error("Auth Me API Error:", error);

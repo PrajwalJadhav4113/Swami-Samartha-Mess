@@ -160,6 +160,13 @@ function LoginForm() {
             )}
           </button>
         </form>
+        {role === "customer" && (
+          <div className="mt-4 text-center">
+            <Link href="/register" className="text-xs text-primary hover:underline font-semibold transition">
+              Don't have an account? Register here
+            </Link>
+          </div>
+        )}
       </div>
 
       <div className="bg-muted/50 border-t border-border px-8 py-4 text-center">

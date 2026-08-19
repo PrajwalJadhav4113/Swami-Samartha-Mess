@@ -54,9 +54,12 @@ export async function POST(request: Request) {
       };
     } else {
       // Find customer
-      const customer = await Customer.findOne({ username, status: "active" });
+      const customer = await Customer.findOne({ username });
       if (!customer) {
-        return NextResponse.json({ error: "Invalid username, password, or account inactive" }, { status: 401 });
+        return NextResponse.json({ error: "Invalid username or password" }, { status: 401 });
+      }
+      if (customer.status !== "active") {
+        return NextResponse.json({ error: "Your account is not active. Status: " + customer.status }, { status: 401 });
       }
 
       // Compare password

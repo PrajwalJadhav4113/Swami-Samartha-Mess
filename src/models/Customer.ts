@@ -8,7 +8,10 @@ export interface ICustomer extends Document {
   username: string;
   passwordHash: string; // hashed password for customer login
   joiningDate: Date;
-  status: "active" | "inactive";
+  status: "pending" | "active" | "inactive" | "rejected";
+  advanceBalance: number;
+  defaultRate?: number;
+  fixedDiscount: number;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -23,7 +26,10 @@ const CustomerSchema = new Schema<ICustomer>(
     username: { type: String, required: true, unique: true, index: true },
     passwordHash: { type: String, required: true },
     joiningDate: { type: Date, required: true, default: Date.now },
-    status: { type: String, enum: ["active", "inactive"], default: "active", index: true },
+    status: { type: String, enum: ["pending", "active", "inactive", "rejected"], default: "pending", index: true },
+    advanceBalance: { type: Number, default: 0 },
+    defaultRate: { type: Number, default: null },
+    fixedDiscount: { type: Number, default: 0 },
     notes: { type: String },
   },
   { timestamps: true }

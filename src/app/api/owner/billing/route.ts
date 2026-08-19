@@ -195,21 +195,35 @@ export async function POST(request: Request) {
       });
     });
 
-    // 7. Calculate previous balance from unpaid bills
+    // 7. Calculate previous balance from unpaid bills that haven't been carried forward
     const previousUnpaidBills = await Bill.find({
       customerId,
       paymentStatus: { $in: ["pending", "partially_paid"] },
+      isCarriedForward: false,
     });
     const previousBalance = previousUnpaidBills.reduce((sum, b) => sum + (b.finalTotal - b.amountPaid), 0);
 
     // 8. Calculate Totals
     const mealsSum = mealDetails.reduce((sum, m) => sum + m.amount, 0);
     const extrasSum = extraItemsDetails.reduce((sum, e) => sum + e.amount, 0);
+    
+    // Apply customer fixed discount in addition to any explicit discount
+    const customerFixedDiscount = customer.fixedDiscount || 0;
+    const explicitDisc = parseFloat(discount || 0);
+    const disc = explicitDisc + customerFixedDiscount;
+
     const subtotal = mealsSum + extrasSum + previousBalance;
     
-    const disc = parseFloat(discount || 0);
-    const adv = parseFloat(advancePayment || 0);
-    const finalTotal = Math.max(0, subtotal - disc - adv);
+    // Determine advance payment to apply from customer's advance balance
+    let advToApply = parseFloat(advancePayment || 0);
+    if (customer.advanceBalance && customer.advanceBalance > 0) {
+      // If no explicit advance payment is passed, use up to what's available
+      if (advToApply === 0) {
+        advToApply = Math.min(customer.advanceBalance, subtotal - disc);
+      }
+    }
+
+    const finalTotal = Math.max(0, subtotal - disc - advToApply);
 
     // 9. Generate invoice bill number
     const dateCode = `${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, "0")}`;
@@ -225,13 +239,27 @@ export async function POST(request: Request) {
       mealDetails,
       extraItemsDetails,
       discount: disc,
-      advancePayment: adv,
+      advancePayment: advToApply,
       previousBalance,
       finalTotal,
       paymentStatus: finalTotal === 0 ? "paid" : "pending",
       amountPaid: 0,
+      isCarriedForward: false,
       notes,
     });
+
+    // 11. Mark old bills as carried forward and update customer advance balance
+    if (previousUnpaidBills.length > 0) {
+      await Bill.updateMany(
+        { _id: { $in: previousUnpaidBills.map(b => b._id) } },
+        { $set: { isCarriedForward: true } }
+      );
+    }
+
+    if (advToApply > 0) {
+      customer.advanceBalance = (customer.advanceBalance || 0) - advToApply;
+      await customer.save();
+    }
 
     const populated = await Bill.findById(bill._id).populate("customerId", "name mobile address");
     return NextResponse.json(populated, { status: 201 });

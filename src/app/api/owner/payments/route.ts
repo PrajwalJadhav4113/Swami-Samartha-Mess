@@ -96,9 +96,9 @@ export async function POST(request: Request) {
         await bill.save();
       }
     } else {
-      // General payment: if there are pending bills, we could optionally auto-apply to the oldest pending bill.
-      // For simplicity, we can let users link it. But let's auto-apply or leave it. Leaving it is standard, 
-      // but let's check if the user has an outstanding balance. If they pay extra, it remains credit.
+      // General payment (Advance Payment)
+      customer.advanceBalance = (customer.advanceBalance || 0) + numericAmount;
+      await customer.save();
     }
 
     const populated = await Payment.findById(payment._id)
