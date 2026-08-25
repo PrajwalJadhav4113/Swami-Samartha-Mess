@@ -27,6 +27,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     await connectToDatabase();
     
+    if (status === "rejected") {
+      const customer = await Customer.findByIdAndDelete(id);
+      if (!customer) {
+        return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+      }
+      return NextResponse.json({ success: true, message: "Customer profile rejected and deleted", deleted: true });
+    }
+
     const customer = await Customer.findByIdAndUpdate(
       id,
       { status },

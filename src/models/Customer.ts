@@ -12,6 +12,7 @@ export interface ICustomer extends Document {
   advanceBalance: number;
   defaultRate?: number;
   fixedDiscount: number;
+  dietPreference?: "veg" | "both";
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -30,6 +31,7 @@ const CustomerSchema = new Schema<ICustomer>(
     advanceBalance: { type: Number, default: 0 },
     defaultRate: { type: Number, default: null },
     fixedDiscount: { type: Number, default: 0 },
+    dietPreference: { type: String, enum: ["veg", "both"], default: "both" },
     notes: { type: String },
   },
   { timestamps: true }

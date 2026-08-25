@@ -8,6 +8,8 @@ export interface IDailyMealRecord extends Document {
   nightMeal: "none" | "half" | "full";
   nightPrice: number; // Price snapshot of full/half tiffin at this time
   notes?: string;
+  billingStatus?: "UNBILLED" | "BILLED";
+  billId?: mongoose.Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -21,6 +23,8 @@ const DailyMealRecordSchema = new Schema<IDailyMealRecord>(
     nightMeal: { type: String, enum: ["none", "half", "full"], default: "none" },
     nightPrice: { type: Number, required: true, default: 0 },
     notes: { type: String },
+    billingStatus: { type: String, enum: ["UNBILLED", "BILLED"], default: "UNBILLED", index: true },
+    billId: { type: Schema.Types.ObjectId, ref: "Bill", default: null, index: true },
   },
   { timestamps: true }
 );

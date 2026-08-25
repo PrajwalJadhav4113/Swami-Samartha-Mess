@@ -54,9 +54,9 @@ function LoginForm() {
       // Determine redirection URL
       const redirectPath = searchParams.get("redirect");
       if (redirectPath) {
-        router.push(redirectPath);
+        window.location.href = redirectPath;
       } else {
-        router.push(role === "owner" ? "/owner/dashboard" : "/customer/dashboard");
+        window.location.href = role === "owner" ? "/owner/dashboard" : "/customer/dashboard";
       }
     } catch (err: any) {
       error(err.message || "Something went wrong during login");
@@ -108,7 +108,7 @@ function LoginForm() {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
           <div>
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
               Username
@@ -119,6 +119,8 @@ function LoginForm() {
               </span>
               <input
                 type="text"
+                name="login_username"
+                autoComplete="one-time-code"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder={role === "owner" ? "owner_username" : "customer_username"}
@@ -137,6 +139,8 @@ function LoginForm() {
               </span>
               <input
                 type="password"
+                name="login_password"
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"

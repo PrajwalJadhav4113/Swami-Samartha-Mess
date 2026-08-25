@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Bill from "@/models/Bill";
 import Payment from "@/models/Payment";
+import DailyMealRecord from "@/models/DailyMealRecord";
+import DailyMealItem from "@/models/DailyMealItem";
 import { verifyToken } from "@/lib/jwt";
 import { cookies } from "next/headers";
 import { getBillDetailedLogs } from "@/lib/billing-helper";
@@ -27,7 +29,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const dailyRecords = await getBillDetailedLogs(
       bill.customerId._id.toString(),
       bill.billingPeriodStart,
-      bill.billingPeriodEnd
+      bill.billingPeriodEnd,
+      bill._id.toString()
     );
 
     return NextResponse.json({
@@ -49,10 +52,35 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     const { id } = await params;
     await connectToDatabase();
 
-    const result = await Bill.findByIdAndDelete(id);
-    if (!result) {
+    // 1. Fetch the bill first to get customer details
+    const bill = await Bill.findById(id);
+    if (!bill) {
       return NextResponse.json({ error: "Bill not found" }, { status: 404 });
     }
+
+    // 2. Unlock all associated meals and extra items back to UNBILLED
+    await DailyMealRecord.updateMany(
+      { billId: bill._id },
+      { $set: { billingStatus: "UNBILLED", billId: null } }
+    );
+    await DailyMealItem.updateMany(
+      { billId: bill._id },
+      { $set: { billingStatus: "UNBILLED", billId: null } }
+    );
+
+    // 3. Reset isCarriedForward to false for older unpaid bills of this customer
+    if (bill.previousBalance > 0) {
+      await Bill.updateMany(
+        { customerId: bill.customerId, isCarriedForward: true, createdAt: { $lt: bill.createdAt } },
+        { $set: { isCarriedForward: false } }
+      );
+    }
+
+    // 4. Delete payments registered for this bill
+    await Payment.deleteMany({ billId: bill._id });
+
+    // 5. Delete the bill document
+    await Bill.findByIdAndDelete(id);
 
     return NextResponse.json({ success: true, message: "Bill deleted successfully" });
   } catch (error: any) {

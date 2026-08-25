@@ -36,7 +36,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const dailyRecords = await getBillDetailedLogs(
       bill.customerId._id.toString(),
       bill.billingPeriodStart,
-      bill.billingPeriodEnd
+      bill.billingPeriodEnd,
+      bill._id.toString()
     );
 
     return NextResponse.json({

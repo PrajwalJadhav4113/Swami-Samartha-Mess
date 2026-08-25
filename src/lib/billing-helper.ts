@@ -23,7 +23,8 @@ export interface IDailyRecord {
 export async function getBillDetailedLogs(
   customerId: string,
   startDate: Date,
-  endDate: Date
+  endDate: Date,
+  billId?: string
 ): Promise<IDailyRecord[]> {
   const start = new Date(startDate);
   start.setUTCHours(0, 0, 0, 0);
@@ -50,15 +51,23 @@ export async function getBillDetailedLogs(
   };
 
   // 2. Fetch daily meal records and extra items
-  const mealRecords = await DailyMealRecord.find({
+  const mealQuery: any = {
     customerId,
     date: { $gte: start, $lte: end },
-  });
+  };
+  if (billId) {
+    mealQuery.billId = billId;
+  }
+  const mealRecords = await DailyMealRecord.find(mealQuery);
 
-  const extraItems = await DailyMealItem.find({
+  const extraQuery: any = {
     customerId,
     date: { $gte: start, $lte: end },
-  });
+  };
+  if (billId) {
+    extraQuery.billId = billId;
+  }
+  const extraItems = await DailyMealItem.find(extraQuery);
 
   // Map meal records by date timestamp
   const recordsMap = new Map(

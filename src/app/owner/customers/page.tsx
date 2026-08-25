@@ -16,6 +16,7 @@ interface CustomerData {
   status: "pending" | "active" | "inactive" | "rejected";
   joiningDate: string;
   notes?: string;
+  dietPreference?: "veg" | "both";
 }
 
 function CustomersListContent() {
@@ -43,6 +44,7 @@ function CustomersListContent() {
   const [password, setPassword] = useState("");
   const [notes, setNotes] = useState("");
   const [joiningDate, setJoiningDate] = useState(new Date().toISOString().split("T")[0]);
+  const [dietPreference, setDietPreference] = useState<"veg" | "both">("both");
 
   // Open add form if query param ?action=add is set
   useEffect(() => {
@@ -98,6 +100,7 @@ function CustomersListContent() {
           password,
           notes,
           joiningDate,
+          dietPreference,
         }),
       });
 
@@ -113,6 +116,7 @@ function CustomersListContent() {
       setUsername("");
       setPassword("");
       setNotes("");
+      setDietPreference("both");
       setShowAddForm(false);
       
       // Refresh directory
@@ -315,6 +319,24 @@ function CustomersListContent() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
+                    Dietary Preference *
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={dietPreference}
+                      onChange={(e) => setDietPreference(e.target.value as any)}
+                      className="w-full px-3 py-2.5 bg-muted/40 border border-border/80 focus:border-primary/40 focus:bg-card focus:ring-2 focus:ring-primary/10 rounded-xl focus:outline-none transition-all duration-200 text-sm font-semibold cursor-pointer"
+                    >
+                      <option value="both">Eat Both (Veg/Non-Veg)</option>
+                      <option value="veg">Vegetarian</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               <div className="border-t border-border pt-4 flex gap-3 justify-end">
                 <button
                   type="button"
@@ -385,6 +407,15 @@ function CustomersListContent() {
                       >
                         {c.status}
                       </span>
+                      {c.dietPreference === "veg" ? (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/30">
+                          Veg
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400 border border-amber-200 dark:border-amber-900/30">
+                          Eat Both
+                        </span>
+                      )}
                     </div>
                     <span className="text-xs text-muted-foreground block font-medium mt-0.5">@{c.username}</span>
 
@@ -419,9 +450,14 @@ function CustomersListContent() {
                                 body: JSON.stringify({ status: 'active' })
                               });
                               if (res.ok) {
+                                success(`Approved "${c.name}" successfully!`);
                                 fetchCustomers(currentPage, search, statusFilter);
+                              } else {
+                                error("Failed to approve customer.");
                               }
-                            } catch (e) {}
+                            } catch (e) {
+                              error("Failed to approve customer.");
+                            }
                           }}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-semibold rounded-lg transition"
                         >
@@ -436,9 +472,14 @@ function CustomersListContent() {
                                 body: JSON.stringify({ status: 'rejected' })
                               });
                               if (res.ok) {
+                                success(`Rejected and deleted "${c.name}" successfully.`);
                                 fetchCustomers(currentPage, search, statusFilter);
+                              } else {
+                                error("Failed to reject customer.");
                               }
-                            } catch (e) {}
+                            } catch (e) {
+                              error("Failed to reject customer.");
+                            }
                           }}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 text-xs font-semibold rounded-lg transition"
                         >

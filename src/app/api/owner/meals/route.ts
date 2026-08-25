@@ -62,6 +62,7 @@ export async function GET(request: Request) {
         morningMeal: record?.morningMeal || "none",
         nightMeal: record?.nightMeal || "none",
         notes: record?.notes || "",
+        dietPreference: c.dietPreference || "both",
         extras: extras.map((e) => ({
           menuItemId: e.menuItemId.toString(),
           name: e.name,

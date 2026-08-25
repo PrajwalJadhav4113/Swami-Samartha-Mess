@@ -70,7 +70,7 @@ export async function POST(request: Request) {
 
     await connectToDatabase();
     const data = await request.json();
-    const { name, photo, mobile, address, username, password, notes, joiningDate } = data;
+    const { name, photo, mobile, address, username, password, notes, joiningDate, dietPreference } = data;
 
     if (!name || !mobile || !address || !username || !password) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -92,6 +92,7 @@ export async function POST(request: Request) {
       passwordHash,
       joiningDate: joiningDate ? new Date(joiningDate) : new Date(),
       status: "active",
+      dietPreference: dietPreference || "both",
       notes,
     });
 

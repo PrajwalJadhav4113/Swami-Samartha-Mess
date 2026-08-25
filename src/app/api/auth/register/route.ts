@@ -6,7 +6,7 @@ import bcrypt from "bcryptjs";
 export async function POST(request: Request) {
   try {
     await connectToDatabase();
-    const { name, mobile, address, email, password } = await request.json();
+    const { name, mobile, address, email, password, dietPreference } = await request.json();
 
     if (!name || !mobile || !address || !password) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -27,6 +27,7 @@ export async function POST(request: Request) {
       username: mobile, // username defaults to mobile number for now
       passwordHash,
       notes: email ? `Email: ${email}` : "",
+      dietPreference: dietPreference || "both",
       status: "pending",
     });
 

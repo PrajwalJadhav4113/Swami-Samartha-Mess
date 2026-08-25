@@ -45,6 +45,9 @@ function BillingEngineContent() {
   const [notes, setNotes] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [previewData, setPreviewData] = useState<any>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   // Search & Filter list states
   const [search, setSearch] = useState("");
@@ -133,6 +136,35 @@ function BillingEngineContent() {
       return;
     }
 
+    setPreviewLoading(true);
+    try {
+      const res = await fetch("/api/owner/billing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId,
+          startDate,
+          endDate,
+          discount: parseFloat(discount) || 0,
+          advancePayment: parseFloat(advancePayment) || 0,
+          notes,
+          preview: true,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to fetch bill preview");
+
+      setPreviewData(data);
+      setShowPreview(true);
+    } catch (err: any) {
+      error(err.message || "Error fetching bill preview");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleConfirmGenerate = async () => {
     setGenerating(true);
     try {
       const res = await fetch("/api/owner/billing", {
@@ -145,11 +177,12 @@ function BillingEngineContent() {
           discount: parseFloat(discount) || 0,
           advancePayment: parseFloat(advancePayment) || 0,
           notes,
+          preview: false,
         }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to calculate invoice");
+      if (!res.ok) throw new Error(data.error || "Failed to generate bill");
 
       success(`Invoice ${data.billNumber} created successfully!`, "Bill Calculated");
       
@@ -161,6 +194,8 @@ function BillingEngineContent() {
       setAdvancePayment("0");
       setNotes("");
       setShowAddForm(false);
+      setShowPreview(false);
+      setPreviewData(null);
       
       fetchBills();
       
@@ -219,10 +254,14 @@ function BillingEngineContent() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/50 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-              <h3 className="font-bold text-base">Generate Monthly Bill</h3>
+              <h3 className="font-bold text-base">
+                {showPreview ? "Billing Summary Preview" : "Generate Monthly Bill"}
+              </h3>
               <button
                 onClick={() => {
                   setShowAddForm(false);
+                  setShowPreview(false);
+                  setPreviewData(null);
                   if (searchParams.get("customerId")) router.replace("/owner/billing");
                 }}
                 className="text-muted-foreground hover:text-foreground text-sm font-semibold px-2 py-1 rounded-lg hover:bg-muted"
@@ -231,114 +270,300 @@ function BillingEngineContent() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
-                  Select Customer
-                </label>
-                <select
-                  required
-                  value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-muted border border-transparent rounded-lg focus:outline-none focus:bg-card text-sm font-semibold cursor-pointer"
-                >
-                  <option value="">-- Choose Customer --</option>
-                  {customers.map((c) => (
-                    <option key={c._id} value={c._id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {showPreview && previewData ? (
+              <div className="p-6 space-y-4">
+                {/* Summary Row */}
+                <div className="grid grid-cols-3 gap-3 bg-muted/50 p-4 rounded-xl text-center border border-border/50">
+                  <div>
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold block">Total Consumed</span>
+                    <span className="text-sm font-extrabold text-foreground">₹{previewData.totalConsumption}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold block">Already Billed</span>
+                    <span className="text-sm font-extrabold text-rose-600">₹{previewData.alreadyBilled}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold block">Unbilled Now</span>
+                    <span className="text-sm font-extrabold text-emerald-600">₹{previewData.unbilledConsumption}</span>
+                  </div>
+                </div>
 
-              <div className="grid grid-cols-2 gap-4">
+                {/* Date Ranges Detail Row */}
+                <div className="space-y-1.5 p-3.5 bg-card border border-border rounded-xl text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground font-semibold">Selected Period:</span>
+                    <span className="font-bold">
+                      {new Date(startDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} – {new Date(endDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                    </span>
+                  </div>
+                  {previewData.alreadyBilledDatesRange && previewData.alreadyBilledDatesRange !== "None" && (
+                    <div className="flex justify-between text-rose-600">
+                      <span className="font-semibold">Already Billed:</span>
+                      <span className="font-bold">{previewData.alreadyBilledDatesRange}</span>
+                    </div>
+                  )}
+                  {previewData.unbilledDatesRange && previewData.unbilledDatesRange !== "None" && (
+                    <div className="flex justify-between text-emerald-600">
+                      <span className="font-semibold">Unbilled Period:</span>
+                      <span className="font-bold">{previewData.unbilledDatesRange}</span>
+                    </div>
+                  )}
+                </div>
+
+                {previewData.unbilledConsumption === 0 ? (
+                  <div className="space-y-4 py-2">
+                    <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-455 p-4 rounded-xl text-xs space-y-1">
+                      <span className="font-bold block text-sm">No unbilled consumption found!</span>
+                      <span>All food consumption for this period has already been included in existing bills.</span>
+                    </div>
+
+                    {previewData.existingBills && previewData.existingBills.length > 0 && (
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Existing Bills for this range:</span>
+                        <div className="divide-y divide-border border border-border rounded-xl bg-card overflow-hidden">
+                          {previewData.existingBills.map((b: any) => (
+                            <div key={b._id} className="p-3 flex items-center justify-between hover:bg-muted/10 text-xs">
+                              <div>
+                                <span className="font-bold text-foreground block">{b.billNumber}</span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  {new Date(b.billingPeriodStart).toLocaleDateString()} - {new Date(b.billingPeriodEnd).toLocaleDateString()}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="font-bold text-foreground">₹{b.finalTotal}</span>
+                                <Link
+                                  href={`/owner/billing/${b._id}`}
+                                  className="px-2.5 py-1.5 border border-border bg-card hover:bg-muted font-bold rounded-lg text-[10px] transition"
+                                >
+                                  View Bill
+                                </Link>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Itemized Table */}
+                    <div className="space-y-2">
+                      <span className="text-xs font-bold text-muted-foreground uppercase block">Unbilled Breakdown</span>
+                      <div className="border border-border rounded-xl overflow-hidden bg-card text-xs max-h-48 overflow-y-auto">
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="bg-muted/70 text-[10px] uppercase font-bold text-muted-foreground border-b border-border">
+                              <th className="px-3 py-2">Item Description</th>
+                              <th className="px-3 py-2 text-center">Qty</th>
+                              <th className="px-3 py-2 text-right">Rate</th>
+                              <th className="px-3 py-2 text-right">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/60 font-semibold text-foreground">
+                            {previewData.mealDetails.map((m: any) => (
+                              <tr key={m.type} className="hover:bg-muted/5">
+                                <td className="px-3 py-2 capitalize">{m.type.replace("_", " ")}</td>
+                                <td className="px-3 py-2 text-center">{m.quantity}</td>
+                                <td className="px-3 py-2 text-right">₹{m.rate}</td>
+                                <td className="px-3 py-2 text-right">₹{m.amount}</td>
+                              </tr>
+                            ))}
+                            {previewData.extraItemsDetails.map((e: any, idx: number) => (
+                              <tr key={idx} className="hover:bg-muted/5">
+                                <td className="px-3 py-2">{e.name}</td>
+                                <td className="px-3 py-2 text-center">{e.quantity}</td>
+                                <td className="px-3 py-2 text-right">₹{e.rate}</td>
+                                <td className="px-3 py-2 text-right">₹{e.amount}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Summary Math */}
+                    <div className="border-t border-border pt-3 space-y-2 text-xs font-bold">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground font-semibold">Unbilled Subtotal:</span>
+                        <span>₹{previewData.unbilledConsumption}</span>
+                      </div>
+                      {previewData.previousBalance > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground font-semibold">Previous Outstanding:</span>
+                          <span className="text-rose-600">+ ₹{previewData.previousBalance}</span>
+                        </div>
+                      )}
+                      {previewData.discount > 0 && (
+                        <div className="flex justify-between text-emerald-600">
+                          <span>Discount Applied:</span>
+                          <span>- ₹{previewData.discount}</span>
+                        </div>
+                      )}
+                      {previewData.advancePayment > 0 && (
+                        <div className="flex justify-between text-emerald-600">
+                          <span>Advance Applied:</span>
+                          <span>- ₹{previewData.advancePayment}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-sm font-extrabold border-t border-border pt-2 text-foreground">
+                        <span>Final Total Amount:</span>
+                        <span className="text-primary text-base">₹{previewData.finalTotal}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Footer Controls */}
+                <div className="border-t border-border pt-4 flex gap-3 justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setShowPreview(false)}
+                    className="px-4 py-2 border border-border hover:bg-muted text-sm font-semibold rounded-xl transition cursor-pointer"
+                  >
+                    Back to Edit
+                  </button>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddForm(false);
+                        setShowPreview(false);
+                        setPreviewData(null);
+                        if (searchParams.get("customerId")) router.replace("/owner/billing");
+                      }}
+                      className="px-4 py-2 hover:bg-muted text-sm text-muted-foreground font-semibold rounded-xl transition cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    {previewData.unbilledConsumption > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleConfirmGenerate}
+                        disabled={generating}
+                        className="px-4 py-2 bg-primary hover:bg-primary/95 text-white font-semibold text-sm rounded-xl hover-lift shadow transition flex items-center gap-1.5 cursor-pointer"
+                      >
+                        {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                        <span>
+                          {previewData.alreadyBilled > 0 ? "Generate Unbilled Amount" : "Confirm & Generate Bill"}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="p-6 space-y-4">
                 <div>
                   <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
-                    Start Date
+                    Select Customer
                   </label>
-                  <input
-                    type="date"
+                  <select
                     required
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
-                  />
+                    value={customerId}
+                    onChange={(e) => setCustomerId(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-muted border border-transparent rounded-lg focus:outline-none focus:bg-card text-sm font-semibold cursor-pointer"
+                  >
+                    <option value="">-- Choose Customer --</option>
+                    {customers.map((c) => (
+                      <option key={c._id} value={c._id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
+                      Start Date
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
+                      End Date
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
+                      Discount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      value={discount}
+                      onChange={(e) => setDiscount(e.target.value)}
+                      placeholder="0"
+                      className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
+                      Advance Paid (₹)
+                    </label>
+                    <input
+                      type="number"
+                      value={advancePayment}
+                      onChange={(e) => setAdvancePayment(e.target.value)}
+                      placeholder="0"
+                      className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
-                    End Date
+                    Notes
                   </label>
                   <input
-                    type="date"
-                    required
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
+                    type="text"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="e.g. Adjusted from credit note"
                     className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
                   />
                 </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
-                    Discount (₹)
-                  </label>
-                  <input
-                    type="number"
-                    value={discount}
-                    onChange={(e) => setDiscount(e.target.value)}
-                    placeholder="0"
-                    className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
-                  />
+                <div className="border-t border-border pt-4 flex gap-3 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddForm(false);
+                      setShowPreview(false);
+                      setPreviewData(null);
+                      if (searchParams.get("customerId")) router.replace("/owner/billing");
+                    }}
+                    className="px-4 py-2 border border-border hover:bg-muted text-sm font-semibold rounded-xl transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={previewLoading}
+                    className="px-4 py-2 bg-primary hover:bg-primary/95 text-white font-semibold text-sm rounded-xl hover-lift shadow transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {previewLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    <span>Calculate & Preview</span>
+                  </button>
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
-                    Advance Paid (₹)
-                  </label>
-                  <input
-                    type="number"
-                    value={advancePayment}
-                    onChange={(e) => setAdvancePayment(e.target.value)}
-                    placeholder="0"
-                    className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
-                  Notes
-                </label>
-                <input
-                  type="text"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="e.g. Adjusted from credit note"
-                  className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
-                />
-              </div>
-
-              <div className="border-t border-border pt-4 flex gap-3 justify-end">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddForm(false);
-                    if (searchParams.get("customerId")) router.replace("/owner/billing");
-                  }}
-                  className="px-4 py-2 border border-border hover:bg-muted text-sm font-semibold rounded-xl transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={generating}
-                  className="px-4 py-2 bg-primary hover:bg-primary/95 text-white font-semibold text-sm rounded-xl hover-lift shadow transition flex items-center gap-1.5 cursor-pointer"
-                >
-                  {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  <span>Calculate & Save</span>
-                </button>
-              </div>
-            </form>
+              </form>
+            )}
           </div>
         </div>
       )}

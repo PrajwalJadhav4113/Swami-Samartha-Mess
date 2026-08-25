@@ -8,6 +8,8 @@ export interface IDailyMealItem extends Document {
   price: number; // Historical snapshot price
   quantity: number;
   notes?: string;
+  billingStatus?: "UNBILLED" | "BILLED";
+  billId?: mongoose.Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -21,6 +23,8 @@ const DailyMealItemSchema = new Schema<IDailyMealItem>(
     price: { type: Number, required: true },
     quantity: { type: Number, required: true, min: 1 },
     notes: { type: String },
+    billingStatus: { type: String, enum: ["UNBILLED", "BILLED"], default: "UNBILLED", index: true },
+    billId: { type: Schema.Types.ObjectId, ref: "Bill", default: null, index: true },
   },
   { timestamps: true }
 );

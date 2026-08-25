@@ -1,32 +1,32 @@
 @import "tailwindcss";
 
 :root {
-  --background: 220 33% 98%;
-  --foreground: 224 71.4% 4.1%;
+  --background: 210 20% 97.5%; /* Crisp, bright slate-tinted off-white background */
+  --foreground: 222.2 84% 4.9%; /* Rich navy-black / deep slate for ultra-crisp text */
   
-  --card: 0 0% 100%;
-  --card-foreground: 224 71.4% 4.1%;
+  --card: 0 0% 100%; /* Pure white card bodies to pop off the slate background */
+  --card-foreground: 222.2 84% 4.9%;
   
   --popover: 0 0% 100%;
-  --popover-foreground: 224 71.4% 4.1%;
+  --popover-foreground: 222.2 84% 4.9%;
   
-  --primary: 24.6 95% 50%;
-  --primary-foreground: 210 20% 98%;
+  --primary: 24.6 95% 50%; /* High-vibrancy brand orange */
+  --primary-foreground: 210 40% 98%;
   
-  --secondary: 220 14.3% 95.9%;
-  --secondary-foreground: 220.9 39.3% 11%;
+  --secondary: 210 30% 95%; /* Clean slate grey for elements */
+  --secondary-foreground: 222.2 47.4% 11.2%;
   
-  --muted: 220 14.3% 95.9%;
-  --muted-foreground: 220 8.9% 46.1%;
+  --muted: 210 25% 94%;
+  --muted-foreground: 215.4 16.3% 45%; /* High-contrast mid slate grey */
   
-  --accent: 24 95% 95%;
+  --accent: 24 95% 95%; /* Clean orange highlight tint */
   --accent-foreground: 24 95% 30%;
   
   --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 20% 98%;
+  --destructive-foreground: 210 40% 98%;
   
-  --border: 220 13% 91%;
-  --input: 220 13% 91%;
+  --border: 214.3 32% 89.5%; /* Well-defined slate borders */
+  --input: 214.3 32% 89.5%;
   --ring: 24.6 95% 50%;
   
   --radius: 0.75rem;
@@ -115,10 +115,11 @@ body {
 
 /* Glassmorphism Classes */
 .glass {
-  background: rgba(255, 255, 255, 0.45);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(220, 225, 235, 0.4);
+  box-shadow: 0 8px 30px 0 rgba(10, 15, 25, 0.03);
 }
 
 .dark .glass {

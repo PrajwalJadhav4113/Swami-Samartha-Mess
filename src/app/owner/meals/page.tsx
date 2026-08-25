@@ -20,6 +20,7 @@ interface CustomerMealRecord {
   nightMeal: "none" | "half" | "full";
   notes: string;
   extras: ExtraSelection[];
+  dietPreference?: "veg" | "both";
 }
 
 interface MenuItem {
@@ -346,25 +347,38 @@ export default function DailyMealsEntry() {
                     <tr key={rec.customerId} className="hover:bg-muted/10 transition align-top">
                       {/* Customer Name */}
                       <td className="px-6 py-4.5">
-                        <span className="font-bold block">{rec.customerName}</span>
-                        <Link href={`/owner/customers/${rec.customerId}`} className="text-[10px] text-primary hover:underline font-semibold uppercase mt-0.5 block">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold block text-sm">{rec.customerName}</span>
+                          {rec.dietPreference === "veg" ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-sm">
+                              Veg
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-300 dark:border-zinc-700">
+                              Both
+                            </span>
+                          )}
+                        </div>
+                        <Link href={`/owner/customers/${rec.customerId}`} className="text-[10px] text-primary hover:underline font-semibold uppercase mt-1.5 block">
                           Profile Details
                         </Link>
                       </td>
 
                       {/* Morning Meal choices */}
                       <td className="px-6 py-4.5 text-center">
-                        <div className="inline-grid grid-cols-3 p-1 bg-muted rounded-xl border border-border/35">
+                        <div className="inline-grid grid-cols-3 p-1 bg-muted/40 rounded-xl border border-border/60 gap-1">
                           {(["none", "half", "full"] as const).map((opt) => (
                             <button
                               key={opt}
                               onClick={() => handleMealChange(rec.customerId, "morningMeal", opt)}
-                              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all capitalize cursor-pointer ${
+                              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all capitalize cursor-pointer border ${
                                 rec.morningMeal === opt
                                   ? opt === "none"
-                                    ? "bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-450 border border-rose-200/50 shadow-sm"
-                                    : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-450 border border-emerald-200/50 shadow-sm"
-                                  : "text-muted-foreground hover:text-foreground"
+                                    ? "bg-rose-600 text-white border-rose-600 shadow-sm scale-102 animate-pulse-subtle"
+                                    : opt === "half"
+                                      ? "bg-amber-500 text-white border-amber-500 shadow-sm scale-102"
+                                      : "bg-emerald-600 text-white border-emerald-600 shadow-sm scale-102"
+                                  : "bg-card border-border/40 text-muted-foreground hover:bg-muted hover:text-foreground"
                               }`}
                             >
                               {opt}
@@ -375,17 +389,19 @@ export default function DailyMealsEntry() {
 
                       {/* Night Meal choices */}
                       <td className="px-6 py-4.5 text-center">
-                        <div className="inline-grid grid-cols-3 p-1 bg-muted rounded-xl border border-border/35">
+                        <div className="inline-grid grid-cols-3 p-1 bg-muted/40 rounded-xl border border-border/60 gap-1">
                           {(["none", "half", "full"] as const).map((opt) => (
                             <button
                               key={opt}
                               onClick={() => handleMealChange(rec.customerId, "nightMeal", opt)}
-                              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all capitalize cursor-pointer ${
+                              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all capitalize cursor-pointer border ${
                                 rec.nightMeal === opt
                                   ? opt === "none"
-                                    ? "bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-450 border border-rose-200/50 shadow-sm"
-                                    : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-450 border border-emerald-250/50 shadow-sm"
-                                  : "text-muted-foreground hover:text-foreground"
+                                    ? "bg-rose-600 text-white border-rose-600 shadow-sm scale-102 animate-pulse-subtle"
+                                    : opt === "half"
+                                      ? "bg-amber-500 text-white border-amber-500 shadow-sm scale-102"
+                                      : "bg-emerald-600 text-white border-emerald-600 shadow-sm scale-102"
+                                  : "bg-card border-border/40 text-muted-foreground hover:bg-muted hover:text-foreground"
                               }`}
                             >
                               {opt}
@@ -485,7 +501,18 @@ export default function DailyMealsEntry() {
               <div key={rec.customerId} className="bg-card border border-border rounded-2xl p-5 space-y-4 shadow-sm hover:border-primary/10 transition-all duration-200">
                 <div className="flex justify-between items-start">
                   <div>
-                    <span className="font-bold text-base block">{rec.customerName}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-base block">{rec.customerName}</span>
+                      {rec.dietPreference === "veg" ? (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/30">
+                          Veg
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400 border border-amber-200 dark:border-amber-900/30">
+                          Both
+                        </span>
+                      )}
+                    </div>
                     <Link href={`/owner/customers/${rec.customerId}`} className="text-[10px] text-primary hover:underline font-semibold uppercase mt-0.5 block">
                       Profile Details
                     </Link>
@@ -495,17 +522,19 @@ export default function DailyMealsEntry() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <span className="text-[10px] text-muted-foreground font-bold uppercase block mb-1">Lunch (Morning)</span>
-                    <div className="grid grid-cols-3 p-0.5 bg-muted rounded-xl border border-border/30">
+                    <div className="grid grid-cols-3 p-1 bg-muted/40 rounded-xl border border-border/60 gap-1">
                       {(["none", "half", "full"] as const).map((opt) => (
                         <button
                           key={opt}
                           onClick={() => handleMealChange(rec.customerId, "morningMeal", opt)}
-                          className={`py-1.5 text-[10px] font-bold rounded-lg transition-all capitalize cursor-pointer ${
+                          className={`py-1.5 text-[10px] font-bold rounded-lg transition-all capitalize cursor-pointer border ${
                             rec.morningMeal === opt
                               ? opt === "none"
-                                ? "bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-400 shadow-sm scale-95"
-                                : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-450 shadow-sm scale-95"
-                              : "text-muted-foreground"
+                                ? "bg-rose-500 text-white border-rose-500 shadow-sm scale-95"
+                                : opt === "half"
+                                  ? "bg-amber-500 text-white border-amber-500 shadow-sm scale-95"
+                                  : "bg-emerald-600 text-white border-emerald-600 shadow-sm scale-95"
+                              : "bg-card border-border/40 text-muted-foreground"
                           }`}
                         >
                           {opt}
@@ -516,17 +545,19 @@ export default function DailyMealsEntry() {
 
                   <div>
                     <span className="text-[10px] text-muted-foreground font-bold uppercase block mb-1">Dinner (Night)</span>
-                    <div className="grid grid-cols-3 p-0.5 bg-muted rounded-xl border border-border/30">
+                    <div className="grid grid-cols-3 p-1 bg-muted/40 rounded-xl border border-border/60 gap-1">
                       {(["none", "half", "full"] as const).map((opt) => (
                         <button
                           key={opt}
                           onClick={() => handleMealChange(rec.customerId, "nightMeal", opt)}
-                          className={`py-1.5 text-[10px] font-bold rounded-lg transition-all capitalize cursor-pointer ${
+                          className={`py-1.5 text-[10px] font-bold rounded-lg transition-all capitalize cursor-pointer border ${
                             rec.nightMeal === opt
                               ? opt === "none"
-                                ? "bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-450 shadow-sm scale-95"
-                                : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-450 shadow-sm scale-95"
-                              : "text-muted-foreground"
+                                ? "bg-rose-500 text-white border-rose-500 shadow-sm scale-95"
+                                : opt === "half"
+                                  ? "bg-amber-500 text-white border-amber-500 shadow-sm scale-95"
+                                  : "bg-emerald-600 text-white border-emerald-600 shadow-sm scale-95"
+                              : "bg-card border-border/40 text-muted-foreground"
                           }`}
                         >
                           {opt}

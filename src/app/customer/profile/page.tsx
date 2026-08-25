@@ -9,6 +9,7 @@ interface CustomerDetails {
   mobile: string;
   address: string;
   username: string;
+  dietPreference?: "veg" | "both";
 }
 
 export default function CustomerProfileSettings() {
@@ -162,6 +163,22 @@ export default function CustomerProfileSettings() {
               <div className="p-3 bg-muted/50 rounded-xl border border-border">
                 <span className="text-[10px] text-muted-foreground block font-bold uppercase">Billed Address</span>
                 <span className="text-sm font-bold block mt-0.5">{(profile as any).address}</span>
+              </div>
+            )}
+            {profile.dietPreference && (
+              <div className="p-3 bg-muted/50 rounded-xl border border-border">
+                <span className="text-[10px] text-muted-foreground block font-bold uppercase">Dietary Preference</span>
+                <span className="text-xs font-bold block mt-1">
+                  {profile.dietPreference === "veg" ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/30">
+                      Vegetarian
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-900/30">
+                      Eat Both (Veg/Non-Veg)
+                    </span>
+                  )}
+                </span>
               </div>
             )}
           </div>

@@ -35,7 +35,9 @@ interface CustomerDetail {
   notes?: string;
   defaultRate?: number;
   fixedDiscount?: number;
+  dietPreference?: "veg" | "both";
 }
+
 
 interface MealRecord {
   _id: string;
@@ -103,6 +105,7 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
   const [editUsername, setEditUsername] = useState("");
   const [editPassword, setEditPassword] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [editDietPreference, setEditDietPreference] = useState<"veg" | "both">("both");
   const [editStatus, setEditStatus] = useState<"pending" | "active" | "inactive" | "rejected">("active");
   const [editDefaultRate, setEditDefaultRate] = useState<number | "">("");
   const [editFixedDiscount, setEditFixedDiscount] = useState<number>(0);
@@ -165,6 +168,7 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
       setEditAddress(data.address);
       setEditUsername(data.username);
       setEditNotes(data.notes || "");
+      setEditDietPreference(data.dietPreference || "both");
       setEditStatus(data.status);
       setEditDefaultRate(data.defaultRate || "");
       setEditFixedDiscount(data.fixedDiscount || 0);
@@ -232,6 +236,7 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
         username: editUsername,
         notes: editNotes,
         status: editStatus,
+        dietPreference: editDietPreference,
       };
       if (editPassword) payload.password = editPassword;
 
@@ -495,15 +500,29 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
                 </div>
                 <div>
                   <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
-                    Notes
+                    Dietary Preference
                   </label>
-                  <input
-                    type="text"
-                    value={editNotes}
-                    onChange={(e) => setEditNotes(e.target.value)}
-                    className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
-                  />
+                  <select
+                    value={editDietPreference}
+                    onChange={(e) => setEditDietPreference(e.target.value as any)}
+                    className="w-full px-3 py-2.5 bg-muted border border-transparent rounded-lg focus:outline-none focus:bg-card text-sm font-semibold"
+                  >
+                    <option value="veg">Vegetarian</option>
+                    <option value="both">Eat Both (Veg/Non-Veg)</option>
+                  </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
+                  Notes
+                </label>
+                <input
+                  type="text"
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">

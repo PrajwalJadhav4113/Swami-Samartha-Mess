@@ -17,6 +17,7 @@ export default function RegisterPage() {
   const [address, setAddress] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [dietPreference, setDietPreference] = useState<"veg" | "both">("both");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -32,7 +33,7 @@ export default function RegisterPage() {
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, mobile, address, email, password }),
+        body: JSON.stringify({ name, mobile, address, email, password, dietPreference }),
       });
 
       const data = await response.json();
@@ -81,7 +82,7 @@ export default function RegisterPage() {
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
             <div>
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
                 Full Name *
@@ -130,6 +131,8 @@ export default function RegisterPage() {
                 </span>
                 <input
                   type="email"
+                  name="reg_email"
+                  autoComplete="off"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="e.g. rahul@example.com"
@@ -159,6 +162,36 @@ export default function RegisterPage() {
 
             <div>
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
+                Dietary Preference *
+              </label>
+              <div className="grid grid-cols-2 gap-3 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setDietPreference("veg")}
+                  className={`py-2.5 px-4 rounded-xl text-sm font-semibold border transition-all cursor-pointer ${
+                    dietPreference === "veg"
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+                      : "bg-muted border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Vegetarian
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDietPreference("both")}
+                  className={`py-2.5 px-4 rounded-xl text-sm font-semibold border transition-all cursor-pointer ${
+                    dietPreference === "both"
+                      ? "bg-primary/10 border-primary/30 text-primary"
+                      : "bg-muted border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Eat Both (Veg/Non-Veg)
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
                 Password *
               </label>
               <div className="relative">
@@ -167,6 +200,8 @@ export default function RegisterPage() {
                 </span>
                 <input
                   type="password"
+                  name="reg_password"
+                  autoComplete="new-password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
