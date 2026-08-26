@@ -59,6 +59,7 @@ export async function GET(request: Request) {
       return {
         customerId: cId,
         customerName: c.name,
+        pricingType: c.pricingType || "standard",
         morningMeal: record?.morningMeal || "none",
         nightMeal: record?.nightMeal || "none",
         notes: record?.notes || "",
@@ -97,25 +98,36 @@ export async function POST(request: Request) {
 
     // Fetch current prices of active menu items for snapshots
     const menuItems = await MenuItem.find({ isActive: true });
-    const pricesMap = new Map(menuItems.map((m) => [m.name, m.price]));
+    const normalPricesMap = new Map(menuItems.map((m) => [m.name, m.price]));
+    const specialPricesMap = new Map(menuItems.map((m) => [m.name, m.specialPrice || m.price]));
+    const menuItemsMap = new Map(menuItems.map((m) => [m._id.toString(), m]));
 
-    const morningFullPrice = pricesMap.get("Morning Full Tiffin") || 80;
-    const morningHalfPrice = pricesMap.get("Morning Half Tiffin") || 50;
-    const nightFullPrice = pricesMap.get("Night Full Tiffin") || 80;
-    const nightHalfPrice = pricesMap.get("Night Half Tiffin") || 50;
+    // Fetch active customers to check their pricing profiles
+    const customers = await Customer.find({ status: "active" });
+    const customersMap = new Map(customers.map((c) => [c._id.toString(), c]));
 
     // Process each customer record
     for (const record of records) {
       const { customerId, morningMeal, nightMeal, notes, extras } = record;
+      const customer = customersMap.get(customerId.toString());
+      const isSpecial = customer && customer.pricingType === "special";
+
+      // Determine base prices based on customer's pricing type
+      const activePrices = isSpecial ? specialPricesMap : normalPricesMap;
+
+      const mFull = activePrices.get("Morning Full Tiffin") || 80;
+      const mHalf = activePrices.get("Morning Half Tiffin") || 50;
+      const nFull = activePrices.get("Night Full Tiffin") || 80;
+      const nHalf = activePrices.get("Night Half Tiffin") || 50;
 
       // 1. Determine price snapshot based on meal selection
       let morningPrice = 0;
-      if (morningMeal === "full") morningPrice = morningFullPrice;
-      else if (morningMeal === "half") morningPrice = morningHalfPrice;
+      if (morningMeal === "full") morningPrice = mFull;
+      else if (morningMeal === "half") morningPrice = mHalf;
 
       let nightPrice = 0;
-      if (nightMeal === "full") nightPrice = nightFullPrice;
-      else if (nightMeal === "half") nightPrice = nightHalfPrice;
+      if (nightMeal === "full") nightPrice = nFull;
+      else if (nightMeal === "half") nightPrice = nHalf;
 
       // 2. Upsert DailyMealRecord
       await DailyMealRecord.findOneAndUpdate(
@@ -137,15 +149,25 @@ export async function POST(request: Request) {
       if (extras && Array.isArray(extras) && extras.length > 0) {
         const itemsToSave = extras
           .filter((ext: any) => ext.menuItemId && ext.quantity > 0)
-          .map((ext: any) => ({
-            customerId,
-            date: targetDate,
-            menuItemId: ext.menuItemId,
-            name: ext.name,
-            price: ext.price,
-            quantity: ext.quantity,
-            notes: ext.notes || "",
-          }));
+          .map((ext: any) => {
+            const mItem = menuItemsMap.get(ext.menuItemId.toString());
+            let price = 0;
+            if (mItem) {
+              price = isSpecial ? (mItem.specialPrice || mItem.price) : mItem.price;
+            } else {
+              price = ext.price || 0;
+            }
+
+            return {
+              customerId,
+              date: targetDate,
+              menuItemId: ext.menuItemId,
+              name: mItem ? mItem.name : ext.name,
+              price,
+              quantity: ext.quantity,
+              notes: ext.notes || "",
+            };
+          });
 
         if (itemsToSave.length > 0) {
           await DailyMealItem.insertMany(itemsToSave);

@@ -13,16 +13,16 @@ async function isOwner() {
 }
 
 const DEFAULT_MENU_ITEMS = [
-  { name: "Morning Full Tiffin", category: "Tiffin", price: 80, isActive: true },
-  { name: "Morning Half Tiffin", category: "Tiffin", price: 50, isActive: true },
-  { name: "Night Full Tiffin", category: "Tiffin", price: 80, isActive: true },
-  { name: "Night Half Tiffin", category: "Tiffin", price: 50, isActive: true },
-  { name: "Chapati", category: "Extra", price: 10, isActive: true },
-  { name: "Rice", category: "Extra", price: 30, isActive: true },
-  { name: "Bhaji", category: "Extra", price: 40, isActive: true },
-  { name: "Varan-Bhat", category: "Extra", price: 50, isActive: true },
-  { name: "Curd", category: "Extra", price: 15, isActive: true },
-  { name: "Sweet", category: "Extra", price: 30, isActive: true },
+  { name: "Morning Full Tiffin", category: "Tiffin", price: 80, specialPrice: 60, isActive: true },
+  { name: "Morning Half Tiffin", category: "Tiffin", price: 50, specialPrice: 40, isActive: true },
+  { name: "Night Full Tiffin", category: "Tiffin", price: 80, specialPrice: 60, isActive: true },
+  { name: "Night Half Tiffin", category: "Tiffin", price: 50, specialPrice: 40, isActive: true },
+  { name: "Chapati", category: "Extra", price: 10, specialPrice: 8, isActive: true },
+  { name: "Rice", category: "Extra", price: 30, specialPrice: 20, isActive: true },
+  { name: "Bhaji", category: "Extra", price: 40, specialPrice: 30, isActive: true },
+  { name: "Varan-Bhat", category: "Extra", price: 50, specialPrice: 40, isActive: true },
+  { name: "Curd", category: "Extra", price: 15, specialPrice: 12, isActive: true },
+  { name: "Sweet", category: "Extra", price: 30, specialPrice: 25, isActive: true },
 ];
 
 export async function GET() {
@@ -33,6 +33,14 @@ export async function GET() {
     if (items.length === 0) {
       await MenuItem.insertMany(DEFAULT_MENU_ITEMS);
       items = await MenuItem.find().sort({ category: 1, name: 1 });
+    } else {
+      // Migrate any existing items that don't have specialPrice set yet
+      for (const item of items) {
+        if (!item.specialPrice || item.specialPrice === 0) {
+          item.specialPrice = item.price;
+          await item.save();
+        }
+      }
     }
 
     return NextResponse.json(items);
@@ -49,9 +57,9 @@ export async function POST(request: Request) {
     }
 
     await connectToDatabase();
-    const { name, category, price, isActive } = await request.json();
+    const { name, category, price, specialPrice, isActive } = await request.json();
 
-    if (!name || !category || price === undefined) {
+    if (!name || !category || price === undefined || specialPrice === undefined) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
@@ -64,6 +72,7 @@ export async function POST(request: Request) {
       name,
       category,
       price,
+      specialPrice,
       isActive: isActive !== false,
     });
 

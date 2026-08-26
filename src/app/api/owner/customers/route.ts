@@ -23,6 +23,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search") || "";
     const status = searchParams.get("status") || "";
+    const pricingType = searchParams.get("pricingType") || "";
     const page = parseInt(searchParams.get("page") || "1", 10);
     const limit = parseInt(searchParams.get("limit") || "10", 10);
     const skip = (page - 1) * limit;
@@ -39,6 +40,10 @@ export async function GET(request: Request) {
 
     if (status) {
       query.status = status;
+    }
+
+    if (pricingType) {
+      query.pricingType = pricingType;
     }
 
     const totalCustomers = await Customer.countDocuments(query);
@@ -70,7 +75,7 @@ export async function POST(request: Request) {
 
     await connectToDatabase();
     const data = await request.json();
-    const { name, photo, mobile, address, username, password, notes, joiningDate, dietPreference } = data;
+    const { name, photo, mobile, address, username, password, notes, joiningDate, dietPreference, pricingType } = data;
 
     if (!name || !mobile || !address || !username || !password) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -94,6 +99,7 @@ export async function POST(request: Request) {
       status: "active",
       dietPreference: dietPreference || "both",
       notes,
+      pricingType: pricingType || "standard",
     });
 
     const customerObject = customer.toObject();

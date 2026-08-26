@@ -634,7 +634,12 @@ function BillingEngineContent() {
                 {filteredBills.map((b) => (
                   <tr key={b._id} className="hover:bg-muted/10 transition">
                     <td className="px-6 py-4 font-bold">{b.billNumber}</td>
-                    <td className="px-6 py-4">{b.customerId?.name || "Unknown"}</td>
+                    <td className="px-6 py-4 flex items-center gap-1.5">
+                      {b.customerId?.pricingType === "special" && (
+                        <span className="text-amber-500 font-extrabold" title="Special Customer">⭐</span>
+                      )}
+                      <span>{b.customerId?.name || "Unknown"}</span>
+                    </td>
                     <td className="px-6 py-4 text-xs text-muted-foreground">
                       {new Date(b.billingPeriodStart).toLocaleDateString()} - {new Date(b.billingPeriodEnd).toLocaleDateString()}
                     </td>
@@ -688,7 +693,12 @@ function BillingEngineContent() {
                 <div className="flex justify-between items-start">
                   <div>
                     <span className="font-bold text-sm block">{b.billNumber}</span>
-                    <span className="text-[10px] text-muted-foreground block mt-0.5">{b.customerId?.name || "Unknown"}</span>
+                    <span className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                      {b.customerId?.pricingType === "special" && (
+                        <span className="text-amber-500 font-extrabold" title="Special Customer">⭐</span>
+                      )}
+                      <span>{b.customerId?.name || "Unknown"}</span>
+                    </span>
                   </div>
                   <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
                     b.paymentStatus === "paid" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400" :

@@ -16,6 +16,7 @@ interface ExtraSelection {
 interface CustomerMealRecord {
   customerId: string;
   customerName: string;
+  pricingType?: "standard" | "special";
   morningMeal: "none" | "half" | "full";
   nightMeal: "none" | "half" | "full";
   notes: string;
@@ -28,6 +29,7 @@ interface MenuItem {
   name: string;
   category: string;
   price: number;
+  specialPrice: number;
   isActive: boolean;
 }
 
@@ -157,13 +159,16 @@ export default function DailyMealsEntry() {
         const existingIdx = rec.extras.findIndex((e) => e.menuItemId === item._id);
         const newExtras = [...rec.extras];
 
+        // Resolve correct price based on customer pricing type
+        const price = rec.pricingType === "special" ? (item.specialPrice || item.price) : item.price;
+
         if (existingIdx > -1) {
           newExtras[existingIdx].quantity += 1;
         } else {
           newExtras.push({
             menuItemId: item._id,
             name: item.name,
-            price: item.price,
+            price: price,
             quantity: 1,
           });
         }
@@ -348,6 +353,9 @@ export default function DailyMealsEntry() {
                       {/* Customer Name */}
                       <td className="px-6 py-4.5">
                         <div className="flex items-center gap-2">
+                          {rec.pricingType === "special" && (
+                            <span className="text-amber-500 font-extrabold" title="Special Customer">⭐</span>
+                          )}
                           <span className="font-bold block text-sm">{rec.customerName}</span>
                           {rec.dietPreference === "veg" ? (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-sm">
@@ -467,7 +475,9 @@ export default function DailyMealsEntry() {
                                         className="w-full text-left px-2.5 py-2 hover:bg-muted rounded-lg text-xs font-semibold flex items-center justify-between transition cursor-pointer"
                                       >
                                         <span>{item.name}</span>
-                                        <span className="text-emerald-600">₹{item.price}</span>
+                                        <span className="text-emerald-600">
+                                          ₹{rec.pricingType === "special" ? (item.specialPrice || item.price) : item.price}
+                                        </span>
                                       </button>
                                     ))
                                   )}
@@ -502,6 +512,9 @@ export default function DailyMealsEntry() {
                 <div className="flex justify-between items-start">
                   <div>
                     <div className="flex items-center gap-2">
+                      {rec.pricingType === "special" && (
+                        <span className="text-amber-500 font-extrabold" title="Special Customer">⭐</span>
+                      )}
                       <span className="font-bold text-base block">{rec.customerName}</span>
                       {rec.dietPreference === "veg" ? (
                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/30">

@@ -36,6 +36,16 @@ interface CustomerDetail {
   defaultRate?: number;
   fixedDiscount?: number;
   dietPreference?: "veg" | "both";
+  pricingType?: "standard" | "special";
+  specialPrices?: Record<string, number>;
+}
+
+interface MenuItem {
+  _id: string;
+  name: string;
+  category: string;
+  price: number;
+  isActive: boolean;
 }
 
 
@@ -110,6 +120,9 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
   const [editDefaultRate, setEditDefaultRate] = useState<number | "">("");
   const [editFixedDiscount, setEditFixedDiscount] = useState<number>(0);
   const [updating, setUpdating] = useState(false);
+  const [editPricingType, setEditPricingType] = useState<"standard" | "special">("standard");
+  const [editSpecialPrices, setEditSpecialPrices] = useState<Record<string, number>>({});
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
 
   // Add holiday fields
   const [holidayStart, setHolidayStart] = useState("");
@@ -172,6 +185,8 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
       setEditStatus(data.status);
       setEditDefaultRate(data.defaultRate || "");
       setEditFixedDiscount(data.fixedDiscount || 0);
+      setEditPricingType(data.pricingType || "standard");
+      setEditSpecialPrices(data.specialPrices || {});
     } catch (err: any) {
       error(err.message || "Failed to load customer profile");
       router.push("/owner/customers");
@@ -215,11 +230,24 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
     }
   };
 
+  const fetchMenuItems = async () => {
+    try {
+      const res = await fetch("/api/owner/menu");
+      if (res.ok) {
+        const data = await res.json();
+        setMenuItems(data.filter((item: MenuItem) => item.isActive));
+      }
+    } catch (err) {
+      console.error("Error loading menu:", err);
+    }
+  };
+
   useEffect(() => {
     async function loadAll() {
       setLoading(true);
       await fetchCustomerData();
       await fetchTabHistory();
+      await fetchMenuItems();
       setLoading(false);
     }
     loadAll();
@@ -237,6 +265,8 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
         notes: editNotes,
         status: editStatus,
         dietPreference: editDietPreference,
+        pricingType: editPricingType,
+        specialPrices: editSpecialPrices,
       };
       if (editPassword) payload.password = editPassword;
 
@@ -358,6 +388,11 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
               >
                 {customer.status}
               </span>
+              {customer.pricingType === "special" && (
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400 flex items-center gap-1 shadow-sm animate-pulse-subtle">
+                  ⭐ Special Customer
+                </span>
+              )}
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground font-semibold mt-1">
               <span className="flex items-center gap-1">
@@ -549,6 +584,56 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
                     className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
                   />
                 </div>
+              </div>
+
+              {/* Special Customer Pricing Panel */}
+              <div className="border-t border-border pt-4 mt-2 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
+                      Pricing Profile Type
+                    </label>
+                    <select
+                      value={editPricingType}
+                      onChange={(e) => setEditPricingType(e.target.value as any)}
+                      className="w-full px-3 py-2.5 bg-muted border border-transparent rounded-lg focus:outline-none focus:bg-card text-sm font-semibold"
+                    >
+                      <option value="standard">Normal Customer Pricing</option>
+                      <option value="special">⭐ Special Customer Pricing</option>
+                    </select>
+                  </div>
+                  {editPricingType === "special" && (
+                    <div className="flex items-end">
+                      <span className="text-[10px] font-bold px-2.5 py-1.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200/50 mb-1 flex items-center gap-1 shadow-sm animate-pulse-subtle">
+                        ⭐ Special Customer Pricing Active
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {editPricingType === "special" && (
+                  <div className="bg-muted/40 border border-border rounded-xl p-4 space-y-3">
+                    <span className="text-xs font-bold text-muted-foreground uppercase block border-b border-border/50 pb-1.5 flex items-center gap-1">
+                      ⭐ Shared Special Pricing Preview
+                    </span>
+                    <p className="text-[10px] text-muted-foreground leading-normal mb-2">
+                      These are the centrally configured shared rates applied automatically to all Special Customers.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 max-h-60 overflow-y-auto pr-1">
+                      {menuItems.map((item) => (
+                        <div key={item._id} className="flex items-center justify-between gap-4 text-xs bg-card p-2 rounded-lg border border-border">
+                          <span className="font-semibold text-foreground truncate max-w-44">
+                            {item.name}
+                          </span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-muted-foreground text-[10px]">Normal: <span className="line-through">₹{item.price}</span></span>
+                            <span className="text-amber-600 dark:text-amber-400 font-extrabold text-sm">₹{item.specialPrice || item.price}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <button

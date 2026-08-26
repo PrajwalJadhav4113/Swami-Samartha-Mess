@@ -48,6 +48,7 @@ interface BillData {
     name: string;
     mobile: string;
     address: string;
+    pricingType?: "standard" | "special";
   };
   billingPeriodStart: string;
   billingPeriodEnd: string;
@@ -57,6 +58,9 @@ interface BillData {
   advancePayment: number;
   previousBalance: number;
   finalTotal: number;
+  originalTotal?: number;
+  adjustmentAmount?: number;
+  isAdjusted?: boolean;
   paymentStatus: string;
   amountPaid: number;
   notes?: string;
@@ -279,7 +283,9 @@ export default function CustomerBillDetailPage({ params }: { params: Promise<{ i
 
   const mealSubtotal = bill.mealDetails.reduce((sum, m) => sum + m.amount, 0);
   const extrasSubtotal = bill.extraItemsDetails.reduce((sum, e) => sum + e.amount, 0);
-  const outstanding = bill.finalTotal - bill.amountPaid;
+  
+  const creditOverpayment = bill.amountPaid > bill.finalTotal ? bill.amountPaid - bill.finalTotal : 0;
+  const outstanding = bill.amountPaid > bill.finalTotal ? 0 : bill.finalTotal - bill.amountPaid;
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto animate-in fade-in duration-300">
@@ -336,6 +342,18 @@ export default function CustomerBillDetailPage({ params }: { params: Promise<{ i
             <p className="text-xs text-muted-foreground mt-0.5">
               Contact: {settings?.contactNumber || "+91 9876543210"}
             </p>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {bill.customerId?.pricingType === "special" && (
+                <span className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400 font-bold px-2 py-0.5 rounded-full inline-block shadow-sm">
+                  ⭐ Special Customer Pricing
+                </span>
+              )}
+              {bill.isAdjusted && (
+                <span className="text-[9px] bg-violet-100 text-violet-800 dark:bg-violet-950/40 dark:text-violet-400 font-bold px-2 py-0.5 rounded-full inline-block shadow-sm">
+                  ✏️ Adjusted Bill
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="text-left md:text-right">
@@ -522,6 +540,19 @@ export default function CustomerBillDetailPage({ params }: { params: Promise<{ i
 
             <div className="border-t border-border my-1.5" />
 
+            {bill.isAdjusted && (
+              <>
+                <div className="flex items-center justify-between text-muted-foreground text-xs">
+                  <span>Original Total:</span>
+                  <span>₹{bill.originalTotal}</span>
+                </div>
+                <div className={`flex items-center justify-between text-xs font-bold ${bill.adjustmentAmount !== undefined && bill.adjustmentAmount >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  <span>Adjustment:</span>
+                  <span>{bill.adjustmentAmount !== undefined && bill.adjustmentAmount >= 0 ? '+' : ''}₹{bill.adjustmentAmount}</span>
+                </div>
+              </>
+            )}
+
             <div className="flex items-center justify-between text-base font-black">
               <span>Final Bill Total:</span>
               <span>₹{bill.finalTotal}</span>
@@ -531,6 +562,13 @@ export default function CustomerBillDetailPage({ params }: { params: Promise<{ i
               <span>Amount Paid:</span>
               <span>₹{bill.amountPaid}</span>
             </div>
+
+            {creditOverpayment > 0 && (
+              <div className="flex items-center justify-between text-emerald-600 text-xs font-bold">
+                <span>Credit / Overpayment:</span>
+                <span>₹{creditOverpayment}</span>
+              </div>
+            )}
 
             <div className="flex items-center justify-between text-base font-black text-rose-600 border-t border-dashed border-border pt-1.5">
               <span>Net Balance Due:</span>

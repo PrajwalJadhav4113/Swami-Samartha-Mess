@@ -137,3 +137,173 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
+
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    if (!(await isOwner())) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+    }
+
+    const { id } = await params;
+    const body = await request.json();
+    const { mealDetails, extraItemsDetails, discount, advancePayment, previousBalance, adjustmentReason } = body;
+
+    await connectToDatabase();
+    const bill = await Bill.findById(id);
+    if (!bill) {
+      return NextResponse.json({ error: "Bill not found" }, { status: 404 });
+    }
+
+    // 1. Calculate new amounts
+    const mealsTotal = mealDetails.reduce((sum: number, m: any) => sum + (m.quantity * m.rate), 0);
+    const extrasTotal = extraItemsDetails.reduce((sum: number, e: any) => sum + (e.quantity * e.rate), 0);
+    
+    const disc = parseFloat(discount || 0);
+    const adv = parseFloat(advancePayment || 0);
+    const prevBal = parseFloat(previousBalance || 0);
+    
+    const newSubtotal = mealsTotal + extrasTotal + prevBal;
+    const newFinalTotal = Math.max(0, newSubtotal - disc - adv);
+
+    // If originalTotal is not set yet, set it to the current finalTotal
+    if (!bill.originalTotal) {
+      bill.originalTotal = bill.finalTotal;
+    }
+
+    // 2. Identify changes for audit trail
+    const changes: any[] = [];
+
+    // Compare mealDetails
+    const oldMealMap = new Map(bill.mealDetails.map((m: any) => [m.type, m]));
+    const newMealMap = new Map(mealDetails.map((m: any) => [m.type, m]));
+
+    const allTypes = Array.from(new Set([...oldMealMap.keys(), ...newMealMap.keys()]));
+    allTypes.forEach((type) => {
+      const oldItem = oldMealMap.get(type);
+      const newItem = newMealMap.get(type);
+
+      const oldQty = oldItem ? oldItem.quantity : 0;
+      const newQty = newItem ? newItem.quantity : 0;
+      const oldRate = oldItem ? oldItem.rate : 0;
+      const newRate = newItem ? newItem.rate : 0;
+      const oldAmt = oldItem ? oldItem.amount : 0;
+      const newAmt = newItem ? newItem.amount : 0;
+
+      if (oldQty !== newQty || oldRate !== newRate) {
+        changes.push({
+          itemName: type.replace("_", " "),
+          oldQty,
+          newQty,
+          oldRate,
+          newRate,
+          oldAmount: oldAmt,
+          newAmount: newAmt,
+        });
+      }
+    });
+
+    // Compare extraItemsDetails
+    const oldExtraMap = new Map(bill.extraItemsDetails.map((e: any) => [e.name, e]));
+    const newExtraMap = new Map(extraItemsDetails.map((e: any) => [e.name, e]));
+
+    const allExtraNames = Array.from(new Set([...oldExtraMap.keys(), ...newExtraMap.keys()]));
+    allExtraNames.forEach((name) => {
+      const oldItem = oldExtraMap.get(name);
+      const newItem = newExtraMap.get(name);
+
+      const oldQty = oldItem ? oldItem.quantity : 0;
+      const newQty = newItem ? newItem.quantity : 0;
+      const oldRate = oldItem ? oldItem.rate : 0;
+      const newRate = newItem ? newItem.rate : 0;
+      const oldAmt = oldItem ? oldItem.amount : 0;
+      const newAmt = newItem ? newItem.amount : 0;
+
+      if (oldQty !== newQty || oldRate !== newRate) {
+        changes.push({
+          itemName: name,
+          oldQty,
+          newQty,
+          oldRate,
+          newRate,
+          oldAmount: oldAmt,
+          newAmount: newAmt,
+        });
+      }
+    });
+
+    // Check if other fields changed
+    if (bill.discount !== disc) {
+      changes.push({
+        itemName: "Discount",
+        oldQty: 1,
+        newQty: 1,
+        oldRate: bill.discount,
+        newRate: disc,
+        oldAmount: bill.discount,
+        newAmount: disc,
+      });
+    }
+    if (bill.advancePayment !== adv) {
+      changes.push({
+        itemName: "Advance Applied",
+        oldQty: 1,
+        newQty: 1,
+        oldRate: bill.advancePayment,
+        newRate: adv,
+        oldAmount: bill.advancePayment,
+        newAmount: adv,
+      });
+    }
+    if (bill.previousBalance !== prevBal) {
+      changes.push({
+        itemName: "Previous Balance",
+        oldQty: 1,
+        newQty: 1,
+        oldRate: bill.previousBalance,
+        newRate: prevBal,
+        oldAmount: bill.previousBalance,
+        newAmount: prevBal,
+      });
+    }
+
+    // 3. Save audit log record
+    const auditRecord = {
+      changedBy: "Owner",
+      changedAt: new Date(),
+      reason: adjustmentReason || "Invoice corrected by owner",
+      originalAmount: bill.originalTotal,
+      adjustmentAmount: newFinalTotal - bill.originalTotal,
+      finalAmount: newFinalTotal,
+      changes,
+    };
+
+    bill.adjustmentHistory.push(auditRecord);
+
+    // 4. Update Bill document
+    bill.mealDetails = mealDetails;
+    bill.extraItemsDetails = extraItemsDetails;
+    bill.discount = disc;
+    bill.advancePayment = adv;
+    bill.previousBalance = prevBal;
+    bill.finalTotal = newFinalTotal;
+    bill.adjustmentAmount = newFinalTotal - bill.originalTotal;
+    bill.isAdjusted = true;
+    bill.adjustmentReason = adjustmentReason || bill.adjustmentReason;
+
+    // Recalculate payment status based on amountPaid vs finalTotal
+    if (bill.amountPaid >= newFinalTotal) {
+      bill.paymentStatus = "paid";
+    } else if (bill.amountPaid > 0) {
+      bill.paymentStatus = "partially_paid";
+    } else {
+      bill.paymentStatus = "pending";
+    }
+
+    await bill.save();
+
+    return NextResponse.json({ success: true, bill });
+  } catch (error: any) {
+    console.error("Edit Bill API Error:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
+}

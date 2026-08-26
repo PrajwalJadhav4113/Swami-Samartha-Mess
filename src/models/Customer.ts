@@ -14,6 +14,8 @@ export interface ICustomer extends Document {
   fixedDiscount: number;
   dietPreference?: "veg" | "both";
   notes?: string;
+  pricingType: "standard" | "special";
+  specialPrices?: Map<string, number>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,6 +35,8 @@ const CustomerSchema = new Schema<ICustomer>(
     fixedDiscount: { type: Number, default: 0 },
     dietPreference: { type: String, enum: ["veg", "both"], default: "both" },
     notes: { type: String },
+    pricingType: { type: String, enum: ["standard", "special"], default: "standard", index: true },
+    specialPrices: { type: Map, of: Number, default: {} },
   },
   { timestamps: true }
 );

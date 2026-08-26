@@ -9,6 +9,7 @@ interface MenuItem {
   name: string;
   category: string;
   price: number;
+  specialPrice: number;
   isActive: boolean;
 }
 
@@ -16,11 +17,13 @@ export default function MenuMaster() {
   const { success, error } = useToast();
   const [items, setItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activePricingTab, setActivePricingTab] = useState<"normal" | "special">("normal");
 
   // Form states
   const [name, setName] = useState("");
   const [category, setCategory] = useState("Tiffin");
   const [price, setPrice] = useState("");
+  const [specialPrice, setSpecialPrice] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -29,6 +32,7 @@ export default function MenuMaster() {
   const [editName, setEditName] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [editPrice, setEditPrice] = useState("");
+  const [editSpecialPrice, setEditSpecialPrice] = useState("");
   const [editIsActive, setEditIsActive] = useState(true);
   const [updating, setUpdating] = useState(false);
 
@@ -61,13 +65,19 @@ export default function MenuMaster() {
       error("Price must be a valid positive number");
       return;
     }
+    // If special price is empty, default to normal price
+    const numSpecialPrice = specialPrice ? parseFloat(specialPrice) : numPrice;
+    if (isNaN(numSpecialPrice) || numSpecialPrice < 0) {
+      error("Special Price must be a valid positive number");
+      return;
+    }
 
     setSubmitting(true);
     try {
       const res = await fetch("/api/owner/menu", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, category, price: numPrice }),
+        body: JSON.stringify({ name, category, price: numPrice, specialPrice: numSpecialPrice }),
       });
 
       const data = await res.json();
@@ -76,6 +86,7 @@ export default function MenuMaster() {
       success(`Menu item "${name}" created!`);
       setName("");
       setPrice("");
+      setSpecialPrice("");
       setShowAddForm(false);
       fetchMenuItems();
     } catch (err: any) {
@@ -90,6 +101,7 @@ export default function MenuMaster() {
     setEditName(item.name);
     setEditCategory(item.category);
     setEditPrice(item.price.toString());
+    setEditSpecialPrice((item.specialPrice || item.price).toString());
     setEditIsActive(item.isActive);
   };
 
@@ -103,6 +115,11 @@ export default function MenuMaster() {
       error("Price must be a valid positive number");
       return;
     }
+    const numSpecialPrice = editSpecialPrice ? parseFloat(editSpecialPrice) : numPrice;
+    if (isNaN(numSpecialPrice) || numSpecialPrice < 0) {
+      error("Special Price must be a valid positive number");
+      return;
+    }
 
     setUpdating(true);
     try {
@@ -113,6 +130,7 @@ export default function MenuMaster() {
           name: editName,
           category: editCategory,
           price: numPrice,
+          specialPrice: numSpecialPrice,
           isActive: editIsActive,
         }),
       });
@@ -211,7 +229,7 @@ export default function MenuMaster() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
                     Category
@@ -229,13 +247,25 @@ export default function MenuMaster() {
                 </div>
                 <div>
                   <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
-                    Price (₹)
+                    Normal (₹)
                   </label>
                   <input
                     type="number"
                     required
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
+                    placeholder="e.g. 80"
+                    className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
+                    Special (₹)
+                  </label>
+                  <input
+                    type="number"
+                    value={specialPrice}
+                    onChange={(e) => setSpecialPrice(e.target.value)}
                     placeholder="e.g. 60"
                     className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
                   />
@@ -265,6 +295,30 @@ export default function MenuMaster() {
       )}
 
       {/* Menu list Table */}
+      {/* Tabs */}
+      <div className="flex border-b border-border gap-2 pb-px">
+        <button
+          onClick={() => setActivePricingTab("normal")}
+          className={`px-4 py-2.5 text-sm font-bold border-b-2 transition whitespace-nowrap cursor-pointer ${
+            activePricingTab === "normal"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Normal Pricing
+        </button>
+        <button
+          onClick={() => setActivePricingTab("special")}
+          className={`px-4 py-2.5 text-sm font-bold border-b-2 transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+            activePricingTab === "special"
+              ? "border-amber-500 text-amber-600 dark:text-amber-500"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <span>⭐ Special Customer Pricing</span>
+        </button>
+      </div>
+
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 gap-3">
           <Loader2 className="h-8 w-8 text-primary animate-spin" />
@@ -287,7 +341,9 @@ export default function MenuMaster() {
                 <tr className="border-b border-border bg-muted/30 text-muted-foreground text-xs font-bold uppercase">
                   <th className="px-6 py-4">Item Name</th>
                   <th className="px-6 py-4">Category</th>
-                  <th className="px-6 py-4">Price (₹)</th>
+                  <th className="px-6 py-4">
+                    {activePricingTab === "special" ? "Special Price (₹)" : "Normal Price (₹)"}
+                  </th>
                   <th className="px-6 py-4">Active Status</th>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
@@ -332,14 +388,30 @@ export default function MenuMaster() {
 
                       <td className="px-6 py-4">
                         {isEditing ? (
-                          <input
-                            type="number"
-                            value={editPrice}
-                            onChange={(e) => setEditPrice(e.target.value)}
-                            className="px-2.5 py-1.5 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none text-sm font-semibold w-24"
-                          />
+                          <div className="flex gap-2">
+                            <div>
+                              <span className="text-[9px] text-muted-foreground block mb-0.5 font-bold uppercase">Normal</span>
+                              <input
+                                type="number"
+                                value={editPrice}
+                                onChange={(e) => setEditPrice(e.target.value)}
+                                className="px-2 py-1 bg-muted border border-transparent rounded focus:border-primary/20 focus:bg-card focus:outline-none text-xs font-bold w-16 text-center"
+                              />
+                            </div>
+                            <div>
+                              <span className="text-[9px] text-muted-foreground block mb-0.5 font-bold uppercase">Special</span>
+                              <input
+                                type="number"
+                                value={editSpecialPrice}
+                                onChange={(e) => setEditSpecialPrice(e.target.value)}
+                                className="px-2 py-1 bg-muted border border-transparent rounded focus:border-primary/20 focus:bg-card focus:outline-none text-xs font-bold w-16 text-center"
+                              />
+                            </div>
+                          </div>
                         ) : (
-                          <span className="text-emerald-600 font-extrabold">₹{item.price}</span>
+                          <span className={`${activePricingTab === "special" ? "text-amber-600 dark:text-amber-400" : "text-emerald-600"} font-extrabold`}>
+                            ₹{activePricingTab === "special" ? (item.specialPrice || item.price) : item.price}
+                          </span>
                         )}
                       </td>
 
@@ -468,14 +540,30 @@ export default function MenuMaster() {
 
                     <div className="text-right flex-shrink-0">
                       {isEditing ? (
-                        <input
-                          type="number"
-                          value={editPrice}
-                          onChange={(e) => setEditPrice(e.target.value)}
-                          className="px-2 py-1.5 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none text-sm font-semibold w-16 text-right"
-                        />
+                        <div className="space-y-1.5 text-left">
+                          <div>
+                            <span className="text-[8px] text-muted-foreground block font-bold uppercase">Normal</span>
+                            <input
+                              type="number"
+                              value={editPrice}
+                              onChange={(e) => setEditPrice(e.target.value)}
+                              className="px-2 py-1 bg-muted border border-transparent rounded text-xs font-bold w-16 text-right focus:outline-none focus:bg-card"
+                            />
+                          </div>
+                          <div>
+                            <span className="text-[8px] text-muted-foreground block font-bold uppercase">Special</span>
+                            <input
+                              type="number"
+                              value={editSpecialPrice}
+                              onChange={(e) => setEditSpecialPrice(e.target.value)}
+                              className="px-2 py-1 bg-muted border border-transparent rounded text-xs font-bold w-16 text-right focus:outline-none focus:bg-card"
+                            />
+                          </div>
+                        </div>
                       ) : (
-                        <span className="text-emerald-600 font-extrabold text-sm block">₹{item.price}</span>
+                        <span className={`${activePricingTab === "special" ? "text-amber-600 dark:text-amber-400" : "text-emerald-600"} font-extrabold text-sm block`}>
+                          ₹{activePricingTab === "special" ? (item.specialPrice || item.price) : item.price}
+                        </span>
                       )}
                     </div>
                   </div>

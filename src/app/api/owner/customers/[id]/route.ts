@@ -57,6 +57,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     customer.photo = data.photo !== undefined ? data.photo : customer.photo;
     customer.joiningDate = data.joiningDate ? new Date(data.joiningDate) : customer.joiningDate;
     customer.dietPreference = data.dietPreference ?? customer.dietPreference;
+    customer.pricingType = data.pricingType ?? customer.pricingType;
+    if (data.specialPrices !== undefined) {
+      customer.specialPrices = data.specialPrices;
+    }
 
     if (data.username) {
       // Check if username unique

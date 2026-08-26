@@ -171,8 +171,18 @@ export default function CustomerLayout({ children }: { children: ReactNode }) {
                 <User className="h-4 w-4" />
               </div>
               <div className="overflow-hidden">
-                <span className="font-bold text-xs block truncate">{customerInfo.name}</span>
+                <span className="font-bold text-xs flex items-center gap-1 truncate">
+                  {customerInfo.pricingType === "special" && (
+                    <span className="text-amber-500 font-extrabold" title="Special Customer">⭐</span>
+                  )}
+                  <span>{customerInfo.name}</span>
+                </span>
                 <span className="text-[10px] text-muted-foreground block truncate">@{customerInfo.username}</span>
+                {customerInfo.pricingType === "special" && (
+                  <span className="text-[8px] bg-amber-500 text-white font-extrabold px-1.5 py-0.5 rounded mt-1.5 inline-block">
+                    ⭐ SPECIAL CUSTOMER
+                  </span>
+                )}
               </div>
             </div>
           )}

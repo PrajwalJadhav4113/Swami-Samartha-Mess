@@ -3,7 +3,7 @@
 import React, { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/Toast";
-import { ArrowLeft, Printer, Download, Trash2, Loader2, CreditCard, QrCode, CheckCircle, AlertCircle } from "lucide-react";
+import { ArrowLeft, Printer, Download, Trash2, Loader2, CreditCard, QrCode, CheckCircle, AlertCircle, Edit2, PlusCircle } from "lucide-react";
 import Link from "next/link";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -40,6 +40,33 @@ interface DailyRecord {
   totalPrice: number;
 }
 
+interface BillAdjustmentChange {
+  itemName: string;
+  oldQty: number;
+  newQty: number;
+  oldRate: number;
+  newRate: number;
+  oldAmount: number;
+  newAmount: number;
+}
+
+interface BillAdjustmentHistory {
+  changedBy: string;
+  changedAt: string;
+  reason: string;
+  originalAmount: number;
+  adjustmentAmount: number;
+  finalAmount: number;
+  changes: BillAdjustmentChange[];
+}
+
+interface MenuItem {
+  _id: string;
+  name: string;
+  price: number;
+  isActive: boolean;
+}
+
 interface BillData {
   _id: string;
   billNumber: string;
@@ -48,6 +75,7 @@ interface BillData {
     name: string;
     mobile: string;
     address: string;
+    pricingType?: "standard" | "special";
   };
   billingPeriodStart: string;
   billingPeriodEnd: string;
@@ -57,6 +85,11 @@ interface BillData {
   advancePayment: number;
   previousBalance: number;
   finalTotal: number;
+  originalTotal?: number;
+  adjustmentAmount?: number;
+  isAdjusted?: boolean;
+  adjustmentReason?: string;
+  adjustmentHistory?: BillAdjustmentHistory[];
   paymentStatus: string;
   amountPaid: number;
   notes?: string;
@@ -82,6 +115,17 @@ export default function BillDetailPage({ params }: { params: Promise<{ id: strin
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [settling, setSettling] = useState(false);
+
+  // Edit fields states
+  const [isEditing, setIsEditing] = useState(false);
+  const [editMealDetails, setEditMealDetails] = useState<MealDetail[]>([]);
+  const [editExtraItemsDetails, setEditExtraItemsDetails] = useState<ExtraItemDetail[]>([]);
+  const [editDiscount, setEditDiscount] = useState(0);
+  const [editAdvancePayment, setEditAdvancePayment] = useState(0);
+  const [editPreviousBalance, setEditPreviousBalance] = useState(0);
+  const [adjustmentReason, setAdjustmentReason] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
 
   const handleUpdateStatus = async (status: "paid" | "pending") => {
     setSettling(true);
@@ -115,6 +159,40 @@ export default function BillDetailPage({ params }: { params: Promise<{ id: strin
     }
   };
 
+  const handleConfirmEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjustmentReason.trim()) {
+      error("Please provide an adjustment reason");
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const res = await fetch(`/api/owner/billing/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mealDetails: editMealDetails,
+          extraItemsDetails: editExtraItemsDetails,
+          discount: editDiscount,
+          advancePayment: editAdvancePayment,
+          previousBalance: editPreviousBalance,
+          adjustmentReason: adjustmentReason,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to save edits");
+
+      success("Invoice adjusted successfully!");
+      setBill(data.bill);
+      setIsEditing(false);
+    } catch (err: any) {
+      error(err.message || "Error saving adjustments");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   useEffect(() => {
     async function loadBillAndSettings() {
       setLoading(true);
@@ -130,6 +208,13 @@ export default function BillDetailPage({ params }: { params: Promise<{ id: strin
         if (settingsRes.ok) {
           const settingsData = await settingsRes.json();
           setSettings(settingsData);
+        }
+
+        // Fetch active menu items
+        const menuRes = await fetch("/api/owner/menu");
+        if (menuRes.ok) {
+          const menuData = await menuRes.json();
+          setMenuItems(menuData.filter((m: MenuItem) => m.isActive));
         }
       } catch (err: any) {
         error(err.message || "Failed to load invoice details");
@@ -338,7 +423,17 @@ export default function BillDetailPage({ params }: { params: Promise<{ id: strin
 
   const mealSubtotal = bill.mealDetails.reduce((sum, m) => sum + m.amount, 0);
   const extrasSubtotal = bill.extraItemsDetails.reduce((sum, e) => sum + e.amount, 0);
-  const outstanding = bill.finalTotal - bill.amountPaid;
+  
+  // Calculate credit/overpayment and remaining outstanding
+  const creditOverpayment = bill.amountPaid > bill.finalTotal ? bill.amountPaid - bill.finalTotal : 0;
+  const outstanding = bill.amountPaid > bill.finalTotal ? 0 : bill.finalTotal - bill.amountPaid;
+
+  // Edit live calculations
+  const newMealSum = editMealDetails.reduce((sum, m) => sum + (m.quantity * m.rate), 0);
+  const newExtraSum = editExtraItemsDetails.reduce((sum, e) => sum + (e.quantity * e.rate), 0);
+  const newSubtotal = newMealSum + newExtraSum + editPreviousBalance;
+  const newFinalTotal = Math.max(0, newSubtotal - editDiscount - editAdvancePayment);
+  const editAdjustmentAmount = newFinalTotal - (bill.originalTotal || bill.finalTotal);
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto animate-in fade-in duration-300">
@@ -381,6 +476,21 @@ export default function BillDetailPage({ params }: { params: Promise<{ id: strin
             </button>
           )}
           <button
+            onClick={() => {
+              setEditMealDetails(bill.mealDetails);
+              setEditExtraItemsDetails(bill.extraItemsDetails);
+              setEditDiscount(bill.discount);
+              setEditAdvancePayment(bill.advancePayment);
+              setEditPreviousBalance(bill.previousBalance);
+              setAdjustmentReason("");
+              setIsEditing(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border bg-card hover:bg-muted text-xs font-semibold rounded-lg transition cursor-pointer shadow-sm"
+          >
+            <Edit2 className="h-3.5 w-3.5 text-primary" />
+            <span>Edit Bill</span>
+          </button>
+          <button
             onClick={handlePrint}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border bg-card hover:bg-muted text-xs font-semibold rounded-lg transition cursor-pointer"
           >
@@ -405,8 +515,272 @@ export default function BillDetailPage({ params }: { params: Promise<{ id: strin
         </div>
       </div>
 
-      {/* Main Invoice Card Layout */}
-      <div className="print-card bg-card border border-border rounded-3xl p-8 md:p-12 shadow-md space-y-8 relative overflow-hidden">
+      {isEditing ? (
+        <form onSubmit={handleConfirmEdit} className="bg-card border border-border rounded-3xl p-8 md:p-12 shadow-md space-y-6 no-print">
+          <div className="flex items-center justify-between border-b border-border pb-4">
+            <div>
+              <h3 className="text-lg font-bold text-foreground">Edit Finalized Bill {bill.billNumber}</h3>
+              <p className="text-xs text-muted-foreground">Adjust quantities, rates, extras, discounts, and save.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsEditing(false)}
+              className="text-xs font-bold text-muted-foreground hover:text-foreground px-3 py-1.5 border border-border rounded-lg cursor-pointer"
+            >
+              Cancel Edit
+            </button>
+          </div>
+
+          {/* Standard Meals Edit Grid */}
+          <div className="space-y-3">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Standard Tiffin Meals</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {(["morning_full", "morning_half", "night_full", "night_half"] as const).map((type) => {
+                const existing = editMealDetails.find((m) => m.type === type) || { type, quantity: 0, rate: 80, amount: 0 };
+                return (
+                  <div key={type} className="p-4 bg-muted/40 border border-border rounded-2xl flex items-center justify-between gap-4">
+                    <span className="capitalize text-xs font-bold text-foreground">{type.replace("_", " ")}</span>
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <label className="text-[9px] text-muted-foreground block mb-0.5">Qty</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={existing.quantity}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            const updated = [...editMealDetails];
+                            const idx = updated.findIndex((m) => m.type === type);
+                            if (idx > -1) {
+                              updated[idx].quantity = val;
+                              updated[idx].amount = val * updated[idx].rate;
+                            } else {
+                              updated.push({ type, quantity: val, rate: 80, amount: val * 80 });
+                            }
+                            setEditMealDetails(updated);
+                          }}
+                          className="w-16 px-2 py-1 bg-card border border-border rounded text-xs font-bold text-center"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-muted-foreground block mb-0.5">Rate (₹)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={existing.rate}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            const updated = [...editMealDetails];
+                            const idx = updated.findIndex((m) => m.type === type);
+                            if (idx > -1) {
+                              updated[idx].rate = val;
+                              updated[idx].amount = existing.quantity * val;
+                            } else {
+                              updated.push({ type, quantity: 0, rate: val, amount: 0 });
+                            }
+                            setEditMealDetails(updated);
+                          }}
+                          className="w-16 px-2 py-1 bg-card border border-border rounded text-xs font-bold text-center"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Extra Items Edit Table */}
+          <div className="space-y-3">
+            <div className="flex justify-between items-center border-b border-border/50 pb-1.5">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Extra / Custom Items</span>
+              <div className="relative">
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const item = menuItems.find((m) => m._id === e.target.value);
+                    if (item) {
+                      const existing = editExtraItemsDetails.find((ext) => ext.name === item.name);
+                      if (existing) {
+                        existing.quantity += 1;
+                        existing.amount = existing.quantity * existing.rate;
+                        setEditExtraItemsDetails([...editExtraItemsDetails]);
+                      } else {
+                        setEditExtraItemsDetails([
+                          ...editExtraItemsDetails,
+                          { name: item.name, quantity: 1, rate: item.price, amount: item.price }
+                        ]);
+                      }
+                    }
+                  }}
+                  className="px-2 py-1 text-xs border border-border bg-card rounded font-bold cursor-pointer"
+                >
+                  <option value="">+ Add Extra Item</option>
+                  {menuItems.map((m) => (
+                    <option key={m._id} value={m._id}>{m.name} (₹{m.price})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {editExtraItemsDetails.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground italic py-2">No extra items added to this bill yet.</p>
+            ) : (
+              <div className="border border-border rounded-xl overflow-hidden text-xs">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="bg-muted/70 text-[9px] uppercase font-bold text-muted-foreground border-b border-border">
+                      <th className="px-3 py-2">Item Name</th>
+                      <th className="px-3 py-2 text-center">Qty</th>
+                      <th className="px-3 py-2 text-center">Rate</th>
+                      <th className="px-3 py-2 text-right">Total</th>
+                      <th className="px-3 py-2 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60 font-semibold text-foreground">
+                    {editExtraItemsDetails.map((ext, extIdx) => (
+                      <tr key={extIdx} className="hover:bg-muted/5">
+                        <td className="px-3 py-2">{ext.name}</td>
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="number"
+                            min="1"
+                            value={ext.quantity}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              const updated = [...editExtraItemsDetails];
+                              updated[extIdx].quantity = val;
+                              updated[extIdx].amount = val * ext.rate;
+                              setEditExtraItemsDetails(updated);
+                            }}
+                            className="w-12 px-1 py-0.5 bg-muted border border-border rounded text-center font-bold"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="number"
+                            min="0"
+                            value={ext.rate}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              const updated = [...editExtraItemsDetails];
+                              updated[extIdx].rate = val;
+                              updated[extIdx].amount = ext.quantity * val;
+                              setEditExtraItemsDetails(updated);
+                            }}
+                            className="w-16 px-1 py-0.5 bg-muted border border-border rounded text-center font-bold"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-right">₹{ext.amount}</td>
+                        <td className="px-3 py-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...editExtraItemsDetails];
+                              updated.splice(extIdx, 1);
+                              setEditExtraItemsDetails(updated);
+                            }}
+                            className="text-rose-500 hover:text-rose-600 font-bold cursor-pointer"
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Adjustments: Discount, Advance, Previous balance */}
+          <div className="grid grid-cols-3 gap-4 border-t border-border pt-4">
+            <div>
+              <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Discount (₹)</label>
+              <input
+                type="number"
+                min="0"
+                value={editDiscount}
+                onChange={(e) => setEditDiscount(Number(e.target.value))}
+                className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Advance Applied (₹)</label>
+              <input
+                type="number"
+                min="0"
+                value={editAdvancePayment}
+                onChange={(e) => setEditAdvancePayment(Number(e.target.value))}
+                className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Previous Balance (₹)</label>
+              <input
+                type="number"
+                min="0"
+                value={editPreviousBalance}
+                onChange={(e) => setEditPreviousBalance(Number(e.target.value))}
+                className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
+              />
+            </div>
+          </div>
+
+          {/* Live Totals Math */}
+          <div className="border-t border-border pt-4 p-4 bg-muted/40 rounded-2xl flex flex-wrap justify-between items-center gap-4 text-xs font-bold">
+            <div>
+              <span className="text-muted-foreground">Original Total:</span>
+              <span className="font-extrabold text-foreground ml-1.5">₹{bill.originalTotal || bill.finalTotal}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Adjustment Difference:</span>
+              <span className={`font-extrabold ml-1.5 ${editAdjustmentAmount >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {editAdjustmentAmount >= 0 ? '+' : ''}₹{editAdjustmentAmount}
+              </span>
+            </div>
+            <div className="text-base font-black">
+              <span className="text-foreground">New Final Total:</span>
+              <span className="text-primary ml-1.5">₹{newFinalTotal}</span>
+            </div>
+          </div>
+
+          {/* Reason for Edit */}
+          <div>
+            <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
+              Reason for Adjustment / Correction <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              value={adjustmentReason}
+              onChange={(e) => setAdjustmentReason(e.target.value)}
+              placeholder="e.g. Extra tiffins recorded by mistake"
+              className="w-full px-3 py-2.5 bg-muted border border-transparent rounded-xl focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
+            />
+          </div>
+
+          {/* Save Button */}
+          <div className="border-t border-border pt-4 flex gap-3 justify-end">
+            <button
+              type="button"
+              onClick={() => setIsEditing(false)}
+              className="px-4 py-2 border border-border hover:bg-muted text-sm font-semibold rounded-xl transition cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={savingEdit}
+              className="px-4 py-2 bg-primary hover:bg-primary/95 text-white font-semibold text-sm rounded-xl hover-lift shadow transition flex items-center gap-1.5 cursor-pointer"
+            >
+              {savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              <span>Save & Apply Adjustment</span>
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="print-card bg-card border border-border rounded-3xl p-8 md:p-12 shadow-md space-y-8 relative overflow-hidden">
         {/* Decorative corner seal */}
         <div className="absolute top-0 right-0 w-24 h-24 overflow-hidden pointer-events-none no-print">
           <div className={`absolute top-4 right-[-30px] rotate-45 text-center text-[10px] font-extrabold uppercase py-1 w-32 shadow-sm ${
@@ -430,6 +804,18 @@ export default function BillDetailPage({ params }: { params: Promise<{ id: strin
             <p className="text-xs text-muted-foreground mt-0.5">
               Contact: {settings?.contactNumber || "+91 9876543210"}
             </p>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {bill.customerId?.pricingType === "special" && (
+                <span className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400 font-bold px-2 py-0.5 rounded-full inline-block shadow-sm">
+                  ⭐ Special Customer Pricing
+                </span>
+              )}
+              {bill.isAdjusted && (
+                <span className="text-[9px] bg-violet-100 text-violet-800 dark:bg-violet-950/40 dark:text-violet-400 font-bold px-2 py-0.5 rounded-full inline-block shadow-sm">
+                  ✏️ Adjusted Bill
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="text-left md:text-right">
@@ -620,6 +1006,19 @@ export default function BillDetailPage({ params }: { params: Promise<{ id: strin
 
             <div className="border-t border-border my-1.5" />
 
+            {bill.isAdjusted && (
+              <>
+                <div className="flex items-center justify-between text-muted-foreground text-xs">
+                  <span>Original Total:</span>
+                  <span>₹{bill.originalTotal}</span>
+                </div>
+                <div className={`flex items-center justify-between text-xs font-bold ${bill.adjustmentAmount !== undefined && bill.adjustmentAmount >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  <span>Adjustment:</span>
+                  <span>{bill.adjustmentAmount !== undefined && bill.adjustmentAmount >= 0 ? '+' : ''}₹{bill.adjustmentAmount}</span>
+                </div>
+              </>
+            )}
+
             <div className="flex items-center justify-between text-base font-black">
               <span>Final Bill Total:</span>
               <span>₹{bill.finalTotal}</span>
@@ -630,13 +1029,72 @@ export default function BillDetailPage({ params }: { params: Promise<{ id: strin
               <span>₹{bill.amountPaid}</span>
             </div>
 
+            {creditOverpayment > 0 && (
+              <div className="flex items-center justify-between text-emerald-600 text-xs font-bold">
+                <span>Credit / Overpayment:</span>
+                <span>₹{creditOverpayment}</span>
+              </div>
+            )}
+
             <div className="flex items-center justify-between text-base font-black text-rose-600 border-t border-dashed border-border pt-1.5">
               <span>Net Balance Due:</span>
               <span>₹{outstanding}</span>
             </div>
           </div>
         </div>
-      </div>
+        {bill.adjustmentHistory && bill.adjustmentHistory.length > 0 && (
+          <div className="border-t border-border pt-6 mt-6 space-y-4 no-print">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <span>Adjustment Audit History Log</span>
+            </h3>
+            <div className="space-y-4">
+              {bill.adjustmentHistory.map((history, historyIdx) => (
+                <div key={historyIdx} className="p-4 bg-muted/40 border border-border rounded-xl text-xs space-y-2.5">
+                  <div className="flex justify-between items-start flex-wrap gap-2 border-b border-border/50 pb-2">
+                    <div>
+                      <span className="font-extrabold text-foreground">Adjusted by: {history.changedBy}</span>
+                      <span className="text-[10px] text-muted-foreground block mt-0.5">
+                        {new Date(history.changedAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="text-right font-semibold">
+                      <span className="text-foreground">Original: ₹{history.originalAmount}</span>
+                      <span className={`block text-[10px] ${history.adjustmentAmount >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        Adjustment: {history.adjustmentAmount >= 0 ? '+' : ''}₹{history.adjustmentAmount}
+                      </span>
+                      <span className="font-black text-foreground block">Final: ₹{history.finalAmount}</span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Reason for adjustment:</span>
+                    <span className="font-semibold text-foreground text-xs">{history.reason}</span>
+                  </div>
+
+                  {history.changes && history.changes.length > 0 && (
+                    <div className="space-y-1.5 mt-2">
+                      <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Change Details:</span>
+                      <div className="divide-y divide-border/40 border border-border/40 rounded-lg overflow-hidden bg-card">
+                        {history.changes.map((change, changeIdx) => (
+                          <div key={changeIdx} className="p-2.5 flex justify-between items-center text-[11px] hover:bg-muted/10 font-medium">
+                            <span className="capitalize text-foreground font-bold">{change.itemName}</span>
+                            <div className="flex gap-x-4 text-muted-foreground">
+                              <span>Qty: {change.oldQty} → {change.newQty} (Diff: {change.newQty - change.oldQty})</span>
+                              <span>Rate: ₹{change.oldRate} → ₹{change.newRate}</span>
+                              <span className="font-bold text-foreground">Amount: ₹{change.oldAmount} → ₹{change.newAmount}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        </div>
+      )}
     </div>
   );
 }

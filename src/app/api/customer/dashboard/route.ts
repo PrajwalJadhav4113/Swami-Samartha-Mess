@@ -5,6 +5,7 @@ import Holiday from "@/models/Holiday";
 import Bill from "@/models/Bill";
 import Payment from "@/models/Payment";
 import MenuItem from "@/models/MenuItem";
+import Customer from "@/models/Customer";
 import { verifyToken } from "@/lib/jwt";
 import { cookies } from "next/headers";
 
@@ -29,11 +30,20 @@ export async function GET() {
     const todayStr = new Date().toISOString().split("T")[0];
     const today = new Date(`${todayStr}T00:00:00.000Z`);
 
+    const customer = await Customer.findById(customerId);
+    const isSpecial = customer?.pricingType === "special";
+
     // 1. Today's Meal Record
     const todayMeal = await DailyMealRecord.findOne({ customerId, date: today });
 
     // 2. Active Menu Items (for today's menu preview)
-    const menuItems = await MenuItem.find({ isActive: true }).select("name category price");
+    const rawMenuItems = await MenuItem.find({ isActive: true }).select("name category price specialPrice");
+    const menuItems = rawMenuItems.map((item) => ({
+      _id: item._id,
+      name: item.name,
+      category: item.category,
+      price: isSpecial ? (item.specialPrice || item.price) : item.price,
+    }));
 
     // 3. Current Outstanding Amount
     const bills = await Bill.find({ customerId });

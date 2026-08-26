@@ -114,7 +114,7 @@ export async function GET(request: Request) {
     if (status) query.paymentStatus = status;
 
     const bills = await Bill.find(query)
-      .populate("customerId", "name mobile address")
+      .populate("customerId", "name mobile address pricingType")
       .sort({ createdAt: -1 });
 
     return NextResponse.json(bills);
@@ -408,6 +408,8 @@ export async function POST(request: Request) {
       advancePayment: advToApply,
       previousBalance,
       finalTotal,
+      originalTotal: finalTotal,
+      adjustmentAmount: 0,
       paymentStatus: finalTotal === 0 ? "paid" : "pending",
       amountPaid: 0,
       isCarriedForward: false,

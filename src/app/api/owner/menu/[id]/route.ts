@@ -30,6 +30,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     item.name = data.name ?? item.name;
     item.category = data.category ?? item.category;
     item.price = data.price !== undefined ? data.price : item.price;
+    item.specialPrice = data.specialPrice !== undefined ? data.specialPrice : item.specialPrice;
     item.isActive = data.isActive !== undefined ? data.isActive : item.isActive;
 
     await item.save();

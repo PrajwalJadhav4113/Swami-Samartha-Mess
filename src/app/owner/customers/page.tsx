@@ -17,6 +17,7 @@ interface CustomerData {
   joiningDate: string;
   notes?: string;
   dietPreference?: "veg" | "both";
+  pricingType: "standard" | "special";
 }
 
 function CustomersListContent() {
@@ -31,6 +32,7 @@ function CustomersListContent() {
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [pricingFilter, setPricingFilter] = useState("");
   
   // Modals state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -45,6 +47,7 @@ function CustomersListContent() {
   const [notes, setNotes] = useState("");
   const [joiningDate, setJoiningDate] = useState(new Date().toISOString().split("T")[0]);
   const [dietPreference, setDietPreference] = useState<"veg" | "both">("both");
+  const [pricingType, setPricingType] = useState<"standard" | "special">("standard");
 
   // Open add form if query param ?action=add is set
   useEffect(() => {
@@ -53,12 +56,12 @@ function CustomersListContent() {
     }
   }, [searchParams]);
 
-  const fetchCustomers = async (page: number, searchVal: string, statusVal: string) => {
+  const fetchCustomers = async (page: number, searchVal: string, statusVal: string, pricingVal: string) => {
     setLoading(true);
     try {
       const url = `/api/owner/customers?page=${page}&limit=8&search=${encodeURIComponent(
         searchVal
-      )}&status=${statusVal}`;
+      )}&status=${statusVal}&pricingType=${pricingVal}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch customer directory");
       const data = await res.json();
@@ -75,10 +78,10 @@ function CustomersListContent() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchCustomers(1, search, statusFilter);
+      fetchCustomers(1, search, statusFilter, pricingFilter);
     }, 300); // debounce search
     return () => clearTimeout(timer);
-  }, [search, statusFilter]);
+  }, [search, statusFilter, pricingFilter]);
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,6 +104,7 @@ function CustomersListContent() {
           notes,
           joiningDate,
           dietPreference,
+          pricingType,
         }),
       });
 
@@ -117,10 +121,11 @@ function CustomersListContent() {
       setPassword("");
       setNotes("");
       setDietPreference("both");
+      setPricingType("standard");
       setShowAddForm(false);
       
       // Refresh directory
-      fetchCustomers(1, search, statusFilter);
+      fetchCustomers(1, search, statusFilter, pricingFilter);
       
       // Clean URL params
       if (searchParams.get("action")) {
@@ -182,6 +187,18 @@ function CustomersListContent() {
               <option value="inactive">Inactive</option>
               <option value="pending">Pending</option>
               <option value="rejected">Rejected</option>
+            </select>
+          </div>
+
+          <div className="relative flex items-center">
+            <select
+              value={pricingFilter}
+              onChange={(e) => setPricingFilter(e.target.value)}
+              className="pl-3 pr-8 py-2.5 bg-card border border-border rounded-xl text-sm font-semibold focus:outline-none focus:border-primary/30 appearance-none cursor-pointer"
+            >
+              <option value="">All Customer Pricing</option>
+              <option value="standard">Normal Customer</option>
+              <option value="special">⭐ Special Customer</option>
             </select>
           </div>
         </div>
@@ -335,6 +352,21 @@ function CustomersListContent() {
                     </select>
                   </div>
                 </div>
+                <div>
+                  <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
+                    Pricing Type *
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={pricingType}
+                      onChange={(e) => setPricingType(e.target.value as any)}
+                      className="w-full px-3 py-2.5 bg-muted/40 border border-border/80 focus:border-primary/40 focus:bg-card focus:ring-2 focus:ring-primary/10 rounded-xl focus:outline-none transition-all duration-200 text-sm font-semibold cursor-pointer"
+                    >
+                      <option value="standard">Normal Customer</option>
+                      <option value="special">⭐ Special Customer</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
               <div className="border-t border-border pt-4 flex gap-3 justify-end">
@@ -395,8 +427,9 @@ function CustomersListContent() {
                   </div>
                   <div className="min-w-0 flex-grow">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h4 className="font-bold text-base truncate group-hover:text-primary transition">
-                        {c.name}
+                      <h4 className="font-bold text-base truncate group-hover:text-primary transition flex items-center gap-1">
+                        {c.pricingType === "special" && <span className="text-amber-500 font-extrabold">⭐</span>}
+                        <span>{c.name}</span>
                       </h4>
                       <span
                         className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -407,6 +440,11 @@ function CustomersListContent() {
                       >
                         {c.status}
                       </span>
+                      {c.pricingType === "special" && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400 flex items-center gap-0.5 shadow-sm border border-amber-200 dark:border-amber-900/30">
+                          ⭐ Special
+                        </span>
+                      )}
                       {c.dietPreference === "veg" ? (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/30">
                           Veg
