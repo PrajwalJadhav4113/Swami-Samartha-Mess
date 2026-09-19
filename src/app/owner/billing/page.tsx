@@ -9,6 +9,7 @@ import Link from "next/link";
 interface CustomerSummary {
   _id: string;
   name: string;
+  advanceBalance?: number;
 }
 
 interface BillItem {
@@ -384,7 +385,7 @@ function BillingEngineContent() {
                     {/* Summary Math */}
                     <div className="border-t border-border pt-3 space-y-2 text-xs font-bold">
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground font-semibold">Unbilled Subtotal:</span>
+                        <span className="text-muted-foreground font-semibold">Consumption Total:</span>
                         <span>₹{previewData.unbilledConsumption}</span>
                       </div>
                       {previewData.previousBalance > 0 && (
@@ -399,14 +400,20 @@ function BillingEngineContent() {
                           <span>- ₹{previewData.discount}</span>
                         </div>
                       )}
+                      {(customers.find(c => c._id === customerId)?.advanceBalance || 0) > 0 && (
+                        <div className="flex justify-between text-indigo-600">
+                          <span>Available Advance Credit:</span>
+                          <span>₹{customers.find(c => c._id === customerId)?.advanceBalance || 0}</span>
+                        </div>
+                      )}
                       {previewData.advancePayment > 0 && (
                         <div className="flex justify-between text-emerald-600">
-                          <span>Advance Applied:</span>
+                          <span>Advance Credit Applied:</span>
                           <span>- ₹{previewData.advancePayment}</span>
                         </div>
                       )}
                       <div className="flex justify-between text-sm font-extrabold border-t border-border pt-2 text-foreground">
-                        <span>Final Total Amount:</span>
+                        <span>Amount Payable:</span>
                         <span className="text-primary text-base">₹{previewData.finalTotal}</span>
                       </div>
                     </div>
@@ -515,15 +522,20 @@ function BillingEngineContent() {
                   </div>
                   <div>
                     <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
-                      Advance Paid (₹)
+                      Advance Credit to Apply (₹)
                     </label>
-                    <input
-                      type="number"
-                      value={advancePayment}
-                      onChange={(e) => setAdvancePayment(e.target.value)}
-                      placeholder="0"
-                      className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
-                    />
+                    <div className="space-y-1">
+                      <input
+                        type="number"
+                        value={advancePayment}
+                        onChange={(e) => setAdvancePayment(e.target.value)}
+                        placeholder="0"
+                        className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
+                      />
+                      <span className="text-[10px] text-muted-foreground block font-semibold">
+                        Available credit: <span className="text-indigo-600 font-bold">₹{customers.find(c => c._id === customerId)?.advanceBalance || 0}</span>
+                      </span>
+                    </div>
                   </div>
                 </div>
 

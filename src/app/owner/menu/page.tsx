@@ -65,8 +65,8 @@ export default function MenuMaster() {
       error("Price must be a valid positive number");
       return;
     }
-    // If special price is empty, default to normal price
-    const numSpecialPrice = specialPrice ? parseFloat(specialPrice) : numPrice;
+    // If special price is empty, default to 0 (indicating no override)
+    const numSpecialPrice = specialPrice ? parseFloat(specialPrice) : 0;
     if (isNaN(numSpecialPrice) || numSpecialPrice < 0) {
       error("Special Price must be a valid positive number");
       return;
@@ -101,7 +101,7 @@ export default function MenuMaster() {
     setEditName(item.name);
     setEditCategory(item.category);
     setEditPrice(item.price.toString());
-    setEditSpecialPrice((item.specialPrice || item.price).toString());
+    setEditSpecialPrice(item.specialPrice ? item.specialPrice.toString() : "");
     setEditIsActive(item.isActive);
   };
 
@@ -115,7 +115,7 @@ export default function MenuMaster() {
       error("Price must be a valid positive number");
       return;
     }
-    const numSpecialPrice = editSpecialPrice ? parseFloat(editSpecialPrice) : numPrice;
+    const numSpecialPrice = editSpecialPrice ? parseFloat(editSpecialPrice) : 0;
     if (isNaN(numSpecialPrice) || numSpecialPrice < 0) {
       error("Special Price must be a valid positive number");
       return;
@@ -266,7 +266,7 @@ export default function MenuMaster() {
                     type="number"
                     value={specialPrice}
                     onChange={(e) => setSpecialPrice(e.target.value)}
-                    placeholder="e.g. 60"
+                    placeholder={price || "e.g. 60"}
                     className="w-full px-3 py-2 bg-muted border border-transparent rounded-lg focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
                   />
                 </div>
@@ -402,6 +402,7 @@ export default function MenuMaster() {
                               <span className="text-[9px] text-muted-foreground block mb-0.5 font-bold uppercase">Special</span>
                               <input
                                 type="number"
+                                placeholder={editPrice}
                                 value={editSpecialPrice}
                                 onChange={(e) => setEditSpecialPrice(e.target.value)}
                                 className="px-2 py-1 bg-muted border border-transparent rounded focus:border-primary/20 focus:bg-card focus:outline-none text-xs font-bold w-16 text-center"
@@ -554,6 +555,7 @@ export default function MenuMaster() {
                             <span className="text-[8px] text-muted-foreground block font-bold uppercase">Special</span>
                             <input
                               type="number"
+                              placeholder={editPrice}
                               value={editSpecialPrice}
                               onChange={(e) => setEditSpecialPrice(e.target.value)}
                               className="px-2 py-1 bg-muted border border-transparent rounded text-xs font-bold w-16 text-right focus:outline-none focus:bg-card"

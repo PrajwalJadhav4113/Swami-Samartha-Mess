@@ -13,6 +13,7 @@ interface DashboardData {
   };
   todayHoliday: { reason: string } | null;
   outstandingAmount: number;
+  advanceBalance: number;
   recentPayments: any[];
   menuItems: any[];
 }
@@ -77,7 +78,7 @@ export default function CustomerDashboard() {
       </div>
 
       {/* Grid Status Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      <div className={`grid grid-cols-1 md:grid-cols-3 ${data.advanceBalance > 0 ? "lg:grid-cols-4" : ""} gap-5`}>
         {/* Today's meals */}
         <div className="bg-card border border-border p-5 rounded-2xl shadow-sm flex items-start gap-4">
           <div className="h-12 w-12 rounded-xl bg-violet-100 dark:bg-violet-950/50 flex items-center justify-center text-primary flex-shrink-0">
@@ -148,6 +149,22 @@ export default function CustomerDashboard() {
             </Link>
           </div>
         </div>
+
+        {/* Available Credit */}
+        {data.advanceBalance > 0 && (
+          <div className="bg-card border border-border p-5 rounded-2xl shadow-sm flex items-start gap-4">
+            <div className="h-12 w-12 rounded-xl bg-indigo-100 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-600 flex-shrink-0">
+              <IndianRupee className="h-5 w-5" />
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground font-semibold block">Available Advance Credit</span>
+              <span className="text-2xl font-bold block text-indigo-600 mt-1">₹{data.advanceBalance}</span>
+              <span className="text-[10px] text-muted-foreground font-semibold mt-1 block">
+                Will automatically apply to next invoice.
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main layouts: left = menu & payments, right = upi qr */}

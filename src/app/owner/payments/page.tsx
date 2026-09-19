@@ -31,10 +31,21 @@ interface PaymentItem {
     finalTotal: number;
   };
   amount: number;
+  paymentType?: "BILL_PAYMENT" | "ADVANCE";
   paymentDate: string;
-  paymentMode: "cash" | "upi" | "bank_transfer";
+  paymentMode: "cash" | "upi" | "bank_transfer" | "other";
   transactionReference?: string;
   notes?: string;
+  remainingAmount?: number;
+  allocations?: {
+    billId: {
+      _id: string;
+      billNumber: string;
+      finalTotal: number;
+    };
+    amountApplied: number;
+    appliedAt: string;
+  }[];
   createdAt: string;
 }
 
@@ -49,11 +60,12 @@ function PaymentsLedgerContent() {
   const [loading, setLoading] = useState(true);
 
   // Form states
+  const [paymentType, setPaymentType] = useState<"BILL_PAYMENT" | "ADVANCE">("BILL_PAYMENT");
   const [customerId, setCustomerId] = useState("");
   const [billId, setBillId] = useState("");
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
-  const [paymentMode, setPaymentMode] = useState<"cash" | "upi" | "bank_transfer">("upi");
+  const [paymentMode, setPaymentMode] = useState<"cash" | "upi" | "bank_transfer" | "other">("upi");
   const [transactionReference, setTransactionReference] = useState("");
   const [notes, setNotes] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
@@ -166,12 +178,13 @@ function PaymentsLedgerContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerId,
-          billId: billId || null,
+          billId: paymentType === "ADVANCE" ? null : (billId || null),
           amount: numAmount,
           paymentDate,
           paymentMode,
           transactionReference,
           notes,
+          paymentType,
         }),
       });
 
@@ -181,6 +194,7 @@ function PaymentsLedgerContent() {
       success(`Payment of ₹${numAmount} logged successfully!`, "Payment Recorded");
       
       // Reset
+      setPaymentType("BILL_PAYMENT");
       setCustomerId("");
       setBillId("");
       setAmount("");
@@ -254,6 +268,24 @@ function PaymentsLedgerContent() {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
                 <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
+                  Payment Type
+                </label>
+                <select
+                  value={paymentType}
+                  onChange={(e) => {
+                    const type = e.target.value as "BILL_PAYMENT" | "ADVANCE";
+                    setPaymentType(type);
+                    if (type === "ADVANCE") setBillId("");
+                  }}
+                  className="w-full px-3 py-2.5 bg-muted border border-transparent rounded-lg focus:outline-none focus:bg-card text-sm font-semibold cursor-pointer"
+                >
+                  <option value="BILL_PAYMENT">Bill Payment (Link to Invoice)</option>
+                  <option value="ADVANCE">Advance Payment / Customer Credit</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
                   Select Customer
                 </label>
                 <select
@@ -272,7 +304,7 @@ function PaymentsLedgerContent() {
               </div>
 
               {/* Dynamic Bills listing */}
-              {customerId && (
+              {customerId && paymentType === "BILL_PAYMENT" && (
                 <div>
                   <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
                     Link to Pending Bill (Optional)
@@ -333,6 +365,7 @@ function PaymentsLedgerContent() {
                     <option value="upi">UPI (GPay / PhonePe / Paytm)</option>
                     <option value="cash">Cash</option>
                     <option value="bank_transfer">Bank Transfer</option>
+                    <option value="other">Other</option>
                   </select>
                 </div>
                 <div>
@@ -462,7 +495,36 @@ function PaymentsLedgerContent() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-xs font-semibold">
-                      {p.billId ? (
+                      {p.paymentType === "ADVANCE" ? (
+                        <div className="space-y-1">
+                          <span className="text-indigo-600 font-bold block">💰 Advance Credit</span>
+                          {p.allocations && p.allocations.length > 0 ? (
+                            <div className="space-y-0.5 text-[10px] text-muted-foreground">
+                              {p.allocations.map((alloc: any, idx: number) => (
+                                <div key={idx} className="flex items-center gap-1">
+                                  <span>Applied:</span>
+                                  {alloc.billId ? (
+                                    <Link
+                                      href={`/owner/billing/${alloc.billId._id}`}
+                                      className="text-primary hover:underline font-semibold"
+                                    >
+                                      {alloc.billId.billNumber}
+                                    </Link>
+                                  ) : (
+                                    <span>Bill</span>
+                                  )}
+                                  <span>(₹{alloc.amountApplied})</span>
+                                </div>
+                              ))}
+                              {p.remainingAmount !== undefined && p.remainingAmount > 0 && (
+                                <span className="text-emerald-600 font-semibold block">₹{p.remainingAmount} remaining</span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-emerald-600 text-[10px] font-semibold italic">Unused (₹{p.remainingAmount} available)</span>
+                          )}
+                        </div>
+                      ) : p.billId ? (
                         <Link
                           href={`/owner/billing/${p.billId._id}`}
                           className="text-primary hover:underline flex items-center gap-1"
@@ -506,7 +568,36 @@ function PaymentsLedgerContent() {
                     {p.paymentMode.replace("_", " ")}
                   </span>
                   
-                  {p.billId ? (
+                  {p.paymentType === "ADVANCE" ? (
+                    <div className="text-right">
+                      <span className="text-indigo-600 font-bold block text-[11px]">💰 Advance Credit</span>
+                      {p.allocations && p.allocations.length > 0 ? (
+                        <div className="space-y-0.5 text-[9px] text-muted-foreground">
+                          {p.allocations.map((alloc: any, idx: number) => (
+                            <div key={idx} className="flex items-center justify-end gap-1">
+                              <span>Applied:</span>
+                              {alloc.billId ? (
+                                <Link
+                                  href={`/owner/billing/${alloc.billId._id}`}
+                                  className="text-primary hover:underline"
+                                >
+                                  {alloc.billId.billNumber}
+                                </Link>
+                              ) : (
+                                <span>Bill</span>
+                              )}
+                              <span>(₹{alloc.amountApplied})</span>
+                            </div>
+                          ))}
+                          {p.remainingAmount !== undefined && p.remainingAmount > 0 && (
+                            <span className="text-emerald-600 font-semibold block">₹{p.remainingAmount} remaining</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-emerald-600 text-[9px] font-semibold italic">Unused (₹{p.remainingAmount} available)</span>
+                      )}
+                    </div>
+                  ) : p.billId ? (
                     <Link
                       href={`/owner/billing/${p.billId._id}`}
                       className="text-primary hover:underline flex items-center gap-1 text-[11px] font-semibold"

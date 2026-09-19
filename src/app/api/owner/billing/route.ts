@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Bill from "@/models/Bill";
+import Payment from "@/models/Payment";
 import Customer from "@/models/Customer";
 import DailyMealRecord from "@/models/DailyMealRecord";
 import DailyMealItem from "@/models/DailyMealItem";
@@ -463,10 +464,30 @@ export async function POST(request: Request) {
       );
     }
 
-    // Update customer advance balance
+    // Update customer advance balance and perform FIFO credit allocation
     if (advToApply > 0) {
       customer.advanceBalance = (customer.advanceBalance || 0) - advToApply;
       await customer.save(transactionStarted && session ? { session } : undefined);
+
+      let creditNeeded = advToApply;
+      const activeAdvances = await Payment.find({
+        customerId,
+        paymentType: "ADVANCE",
+        remainingAmount: { $gt: 0 }
+      }).sort({ paymentDate: 1 });
+
+      for (const adv of activeAdvances) {
+        if (creditNeeded <= 0) break;
+        const toAllocate = Math.min(adv.remainingAmount, creditNeeded);
+        adv.remainingAmount -= toAllocate;
+        adv.allocations.push({
+          billId: bill._id,
+          amountApplied: toAllocate,
+          appliedAt: new Date()
+        });
+        await adv.save(transactionStarted && session ? { session } : undefined);
+        creditNeeded -= toAllocate;
+      }
     }
 
     // Commit Transaction

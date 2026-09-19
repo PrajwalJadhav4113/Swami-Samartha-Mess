@@ -38,6 +38,13 @@ interface CustomerDetail {
   dietPreference?: "veg" | "both";
   pricingType?: "standard" | "special";
   specialPrices?: Record<string, number>;
+  advanceBalance?: number;
+  financials?: {
+    totalBills: number;
+    totalPaid: number;
+    advanceBalance: number;
+    outstanding: number;
+  };
 }
 
 interface MenuItem {
@@ -82,6 +89,12 @@ interface PaymentData {
   paymentDate: string;
   paymentMode: string;
   transactionReference?: string;
+  paymentType?: "BILL_PAYMENT" | "ADVANCE";
+  remainingAmount?: number;
+  allocations?: {
+    billId?: { billNumber: string };
+    amountApplied: number;
+  }[];
   billId?: { billNumber: string };
 }
 
@@ -418,6 +431,34 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
           <Trash2 className="h-4 w-4" />
           <span>Delete Profile</span>
         </button>
+      </div>
+
+      {/* Financial Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="bg-card border border-border p-5 rounded-2xl shadow-sm hover-lift flex flex-col justify-between">
+          <span className="text-xs text-muted-foreground font-semibold block">Total Bills (Lifetime)</span>
+          <span className="text-xl font-extrabold text-foreground mt-1 block">
+            ₹{customer.financials?.totalBills || 0}
+          </span>
+        </div>
+        <div className="bg-card border border-border p-5 rounded-2xl shadow-sm hover-lift flex flex-col justify-between">
+          <span className="text-xs text-muted-foreground font-semibold block">Total Paid (Lifetime)</span>
+          <span className="text-xl font-extrabold text-emerald-600 mt-1 block">
+            ₹{customer.financials?.totalPaid || 0}
+          </span>
+        </div>
+        <div className="bg-card border border-border p-5 rounded-2xl shadow-sm hover-lift flex flex-col justify-between">
+          <span className="text-xs text-muted-foreground font-semibold block">💰 Available Advance Credit</span>
+          <span className="text-xl font-extrabold text-indigo-600 mt-1 block">
+            ₹{customer.financials?.advanceBalance || 0}
+          </span>
+        </div>
+        <div className="bg-card border border-border p-5 rounded-2xl shadow-sm hover-lift flex flex-col justify-between">
+          <span className="text-xs text-muted-foreground font-semibold block">Net Outstanding Due</span>
+          <span className={`text-xl font-extrabold mt-1 block ${(customer.financials?.outstanding || 0) > 0 ? "text-rose-600" : "text-muted-foreground"}`}>
+            ₹{customer.financials?.outstanding || 0}
+          </span>
+        </div>
       </div>
 
       {/* Tabs list */}
@@ -839,7 +880,25 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
                         <td className="py-3.5 text-emerald-600 font-bold">₹{p.amount}</td>
                         <td className="py-3.5 uppercase text-xs">{p.paymentMode.replace("_", " ")}</td>
                         <td className="py-3.5 text-xs text-muted-foreground">
-                          {p.billId ? (
+                          {p.paymentType === "ADVANCE" ? (
+                            <div className="space-y-1">
+                              <span className="text-indigo-600 font-bold block">💰 Advance Credit</span>
+                              {p.allocations && p.allocations.length > 0 ? (
+                                <div className="space-y-0.5 text-[10px] text-muted-foreground font-semibold">
+                                  {p.allocations.map((alloc, idx) => (
+                                    <div key={idx}>
+                                      <span>Applied: {alloc.billId?.billNumber || "Bill"} (₹{alloc.amountApplied})</span>
+                                    </div>
+                                  ))}
+                                  {p.remainingAmount !== undefined && p.remainingAmount > 0 && (
+                                    <span className="text-emerald-600 font-bold block">₹{p.remainingAmount} remaining</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-emerald-600 font-semibold italic text-[10px]">Unused (₹{p.remainingAmount} available)</span>
+                              )}
+                            </div>
+                          ) : p.billId ? (
                             <span className="font-semibold text-foreground">Linked: {p.billId.billNumber}</span>
                           ) : (
                             p.transactionReference || "General Credit"

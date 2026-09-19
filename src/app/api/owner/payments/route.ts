@@ -32,6 +32,7 @@ export async function GET(request: Request) {
     const payments = await Payment.find(query)
       .populate("customerId", "name mobile")
       .populate("billId", "billNumber finalTotal")
+      .populate("allocations.billId", "billNumber finalTotal")
       .sort({ paymentDate: -1 });
 
     return NextResponse.json(payments);
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
     }
 
     await connectToDatabase();
-    const { customerId, billId, amount, paymentDate, paymentMode, transactionReference, notes } = await request.json();
+    const { customerId, billId, amount, paymentDate, paymentMode, transactionReference, notes, paymentType } = await request.json();
 
     if (!customerId || amount === undefined || !paymentMode) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -65,19 +66,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Customer not found" }, { status: 404 });
     }
 
+    const payType = paymentType === "ADVANCE" ? "ADVANCE" : "BILL_PAYMENT";
+
     // 2. Create the payment record
     const payment = await Payment.create({
       customerId,
-      billId: billId || null,
+      billId: payType === "ADVANCE" ? null : (billId || null),
       amount: numericAmount,
+      paymentType: payType,
       paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
       paymentMode,
       transactionReference,
       notes,
+      remainingAmount: payType === "ADVANCE" ? numericAmount : 0,
     });
 
     // 3. Update the associated bill, if any
-    if (billId) {
+    if (payType === "BILL_PAYMENT" && billId) {
       const bill = await Bill.findById(billId);
       if (bill) {
         // Calculate total payments against this bill
@@ -95,7 +100,7 @@ export async function POST(request: Request) {
 
         await bill.save();
       }
-    } else {
+    } else if (payType === "ADVANCE") {
       // General payment (Advance Payment)
       customer.advanceBalance = (customer.advanceBalance || 0) + numericAmount;
       await customer.save();
@@ -103,7 +108,8 @@ export async function POST(request: Request) {
 
     const populated = await Payment.findById(payment._id)
       .populate("customerId", "name mobile")
-      .populate("billId", "billNumber finalTotal");
+      .populate("billId", "billNumber finalTotal")
+      .populate("allocations.billId", "billNumber finalTotal");
 
     return NextResponse.json(populated, { status: 201 });
   } catch (error: any) {

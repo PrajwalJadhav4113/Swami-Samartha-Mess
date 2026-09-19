@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Customer from "@/models/Customer";
+import Bill from "@/models/Bill";
+import Payment from "@/models/Payment";
 import { verifyToken } from "@/lib/jwt";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
@@ -27,7 +29,26 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "Customer not found" }, { status: 404 });
     }
 
-    return NextResponse.json(customer);
+    const bills = await Bill.find({ customerId: id });
+    const totalBills = bills.reduce((sum, b) => sum + b.finalTotal, 0);
+
+    const payments = await Payment.find({ customerId: id });
+    const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+
+    const activeBills = bills.filter((b) => !b.isCarriedForward);
+    const outstanding = activeBills.reduce((sum, b) => sum + (b.finalTotal - b.amountPaid), 0);
+
+    const customerObj = customer.toObject();
+
+    return NextResponse.json({
+      ...customerObj,
+      financials: {
+        totalBills,
+        totalPaid,
+        advanceBalance: customer.advanceBalance || 0,
+        outstanding,
+      },
+    });
   } catch (error: any) {
     console.error("Get Customer Detail API Error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

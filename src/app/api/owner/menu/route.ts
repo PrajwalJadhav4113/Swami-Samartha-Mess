@@ -33,14 +33,6 @@ export async function GET() {
     if (items.length === 0) {
       await MenuItem.insertMany(DEFAULT_MENU_ITEMS);
       items = await MenuItem.find().sort({ category: 1, name: 1 });
-    } else {
-      // Migrate any existing items that don't have specialPrice set yet
-      for (const item of items) {
-        if (!item.specialPrice || item.specialPrice === 0) {
-          item.specialPrice = item.price;
-          await item.save();
-        }
-      }
     }
 
     return NextResponse.json(items);

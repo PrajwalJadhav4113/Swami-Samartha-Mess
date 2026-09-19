@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import Bill from "@/models/Bill";
 import Payment from "@/models/Payment";
+import Customer from "@/models/Customer";
 import DailyMealRecord from "@/models/DailyMealRecord";
 import DailyMealItem from "@/models/DailyMealItem";
 import { verifyToken } from "@/lib/jwt";
@@ -74,6 +75,24 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
         { customerId: bill.customerId, isCarriedForward: true, createdAt: { $lt: bill.createdAt } },
         { $set: { isCarriedForward: false } }
       );
+    }
+
+    // Restore advance credit allocations before deleting the bill
+    const appliedAdvances = await Payment.find({ "allocations.billId": bill._id });
+    let totalCreditRestored = 0;
+    for (const adv of appliedAdvances) {
+      const allocation = adv.allocations.find((a: any) => a.billId.toString() === bill._id.toString());
+      if (allocation) {
+        totalCreditRestored += allocation.amountApplied;
+        adv.remainingAmount += allocation.amountApplied;
+        adv.allocations = adv.allocations.filter((a: any) => a.billId.toString() !== bill._id.toString());
+        await adv.save();
+      }
+    }
+    if (totalCreditRestored > 0) {
+      await Customer.findByIdAndUpdate(bill.customerId, {
+        $inc: { advanceBalance: totalCreditRestored }
+      });
     }
 
     // 4. Delete payments registered for this bill
@@ -278,6 +297,56 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     };
 
     bill.adjustmentHistory.push(auditRecord);
+
+    // Handle advance payment re-allocation if it has changed
+    if (bill.advancePayment !== adv) {
+      // 1. Release previous allocations for this bill
+      const appliedAdvances = await Payment.find({ "allocations.billId": bill._id });
+      let totalCreditRestored = 0;
+      for (const advPay of appliedAdvances) {
+        const allocation = advPay.allocations.find((a: any) => a.billId.toString() === bill._id.toString());
+        if (allocation) {
+          totalCreditRestored += allocation.amountApplied;
+          advPay.remainingAmount += allocation.amountApplied;
+          advPay.allocations = advPay.allocations.filter((a: any) => a.billId.toString() !== bill._id.toString());
+          await advPay.save();
+        }
+      }
+
+      // Add back the restored credit to customer's advance balance first
+      const customer = await Customer.findById(bill.customerId);
+      if (customer) {
+        customer.advanceBalance = (customer.advanceBalance || 0) + totalCreditRestored;
+        
+        // 2. Allocate the new amount from available advance payments
+        if (adv > 0) {
+          let creditNeeded = adv;
+          const activeAdvances = await Payment.find({
+            customerId: customer._id,
+            paymentType: "ADVANCE",
+            remainingAmount: { $gt: 0 }
+          }).sort({ paymentDate: 1 });
+
+          for (const advPay of activeAdvances) {
+            if (creditNeeded <= 0) break;
+            const toAllocate = Math.min(advPay.remainingAmount, creditNeeded);
+            advPay.remainingAmount -= toAllocate;
+            advPay.allocations.push({
+              billId: bill._id,
+              amountApplied: toAllocate,
+              appliedAt: new Date()
+            });
+            await advPay.save();
+            creditNeeded -= toAllocate;
+          }
+
+          // Deduct from customer's advance balance
+          customer.advanceBalance = Math.max(0, customer.advanceBalance - adv);
+        }
+
+        await customer.save();
+      }
+    }
 
     // 4. Update Bill document
     bill.mealDetails = mealDetails;

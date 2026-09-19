@@ -79,6 +79,7 @@ export async function GET() {
       },
       todayHoliday: todayHoliday ? { reason: todayHoliday.reason } : null,
       outstandingAmount,
+      advanceBalance: customer?.advanceBalance || 0,
       recentPayments,
       menuItems,
     });

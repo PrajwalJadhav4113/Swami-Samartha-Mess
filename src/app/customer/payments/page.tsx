@@ -13,10 +13,21 @@ interface PaymentItem {
     finalTotal: number;
   };
   amount: number;
+  paymentType?: "BILL_PAYMENT" | "ADVANCE";
   paymentDate: string;
-  paymentMode: "cash" | "upi" | "bank_transfer";
+  paymentMode: "cash" | "upi" | "bank_transfer" | "other";
   transactionReference?: string;
   notes?: string;
+  remainingAmount?: number;
+  allocations?: {
+    billId: {
+      _id: string;
+      billNumber: string;
+      finalTotal: number;
+    };
+    amountApplied: number;
+    appliedAt: string;
+  }[];
   createdAt: string;
 }
 
@@ -90,7 +101,36 @@ export default function CustomerPaymentsHistory() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-xs font-semibold">
-                      {p.billId ? (
+                      {p.paymentType === "ADVANCE" ? (
+                        <div className="space-y-1">
+                          <span className="text-indigo-600 font-bold block">💰 Advance Credit</span>
+                          {p.allocations && p.allocations.length > 0 ? (
+                            <div className="space-y-0.5 text-[10px] text-muted-foreground font-semibold">
+                              {p.allocations.map((alloc: any, idx: number) => (
+                                <div key={idx} className="flex items-center gap-1">
+                                  <span>Applied:</span>
+                                  {alloc.billId ? (
+                                    <Link
+                                      href={`/customer/bills/${alloc.billId._id}`}
+                                      className="text-primary hover:underline font-bold"
+                                    >
+                                      {alloc.billId.billNumber}
+                                    </Link>
+                                  ) : (
+                                    <span>Bill</span>
+                                  )}
+                                  <span>(₹{alloc.amountApplied})</span>
+                                </div>
+                              ))}
+                              {p.remainingAmount !== undefined && p.remainingAmount > 0 && (
+                                <span className="text-emerald-600 font-bold block">₹{p.remainingAmount} remaining</span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-emerald-600 text-[10px] font-semibold italic">Unused (₹{p.remainingAmount} available)</span>
+                          )}
+                        </div>
+                      ) : p.billId ? (
                         <Link
                           href={`/customer/bills/${p.billId._id}`}
                           className="text-primary hover:underline flex items-center gap-1"
