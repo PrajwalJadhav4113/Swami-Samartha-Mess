@@ -359,8 +359,28 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     bill.isAdjusted = true;
     bill.adjustmentReason = adjustmentReason || bill.adjustmentReason;
 
-    // Recalculate payment status based on amountPaid vs finalTotal
-    if (bill.amountPaid >= newFinalTotal) {
+    // Handle Overpayment: Convert excess paid amount into customer advance credit (FEAT-008)
+    if (bill.amountPaid > newFinalTotal) {
+      const excessCredit = bill.amountPaid - newFinalTotal;
+      const custObj = await Customer.findById(bill.customerId);
+      if (custObj) {
+        custObj.advanceBalance = (custObj.advanceBalance || 0) + excessCredit;
+        await custObj.save();
+
+        await Payment.create({
+          customerId: custObj._id,
+          billId: null,
+          amount: excessCredit,
+          paymentType: "ADVANCE",
+          paymentDate: new Date(),
+          paymentMode: "other",
+          notes: `Excess credit converted from bill adjustment on #${bill.billNumber} (${adjustmentReason || "Invoice corrected"})`,
+          remainingAmount: excessCredit,
+          allocations: [],
+        });
+      }
+      bill.paymentStatus = "paid";
+    } else if (bill.amountPaid === newFinalTotal) {
       bill.paymentStatus = "paid";
     } else if (bill.amountPaid > 0) {
       bill.paymentStatus = "partially_paid";

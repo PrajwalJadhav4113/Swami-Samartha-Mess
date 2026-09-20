@@ -6,6 +6,7 @@ import Customer from "@/models/Customer";
 import DailyMealRecord from "@/models/DailyMealRecord";
 import DailyMealItem from "@/models/DailyMealItem";
 import Holiday from "@/models/Holiday";
+import Notification from "@/models/Notification";
 import { verifyToken } from "@/lib/jwt";
 import { cookies } from "next/headers";
 import mongoose from "mongoose";
@@ -109,10 +110,27 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const customerId = searchParams.get("customerId");
     const status = searchParams.get("status");
+    const month = searchParams.get("month"); // e.g. "2026-08"
+    const includeSuperseded = searchParams.get("includeSuperseded") === "true";
 
     const query: any = {};
     if (customerId) query.customerId = customerId;
     if (status) query.paymentStatus = status;
+
+    if (!includeSuperseded) {
+      query.status = { $nin: ["SUPERSEDED", "CANCELLED"] };
+    }
+
+    if (month && month !== "all" && /^\d{4}-\d{2}$/.test(month)) {
+      const [yrStr, moStr] = month.split("-");
+      const yr = parseInt(yrStr);
+      const mo = parseInt(moStr) - 1; // 0-indexed month
+      const mStart = new Date(Date.UTC(yr, mo, 1, 0, 0, 0, 0));
+      const mEnd = new Date(Date.UTC(yr, mo + 1, 0, 23, 59, 59, 999));
+
+      query.billingPeriodStart = { $lte: mEnd };
+      query.billingPeriodEnd = { $gte: mStart };
+    }
 
     const bills = await Bill.find(query)
       .populate("customerId", "name mobile address pricingType")
@@ -156,31 +174,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Customer not found" }, { status: 404 });
     }
 
-    // Calculate intersections of this range with existing bills
-    const existingBills = await Bill.find({
+    // 2. Fetch existing ACTIVE bills overlapping with this period range
+    const existingActiveBills = await Bill.find({
       customerId,
       billingPeriodStart: { $lte: end },
       billingPeriodEnd: { $gte: start },
+      status: { $nin: ["SUPERSEDED", "CANCELLED"] },
     }).sort({ billingPeriodStart: 1 });
 
-    const intersections: DateInterval[] = [];
-    existingBills.forEach((b) => {
-      const bStart = new Date(b.billingPeriodStart);
-      const bEnd = new Date(b.billingPeriodEnd);
-      const overlapStart = bStart < start ? start : bStart;
-      const overlapEnd = bEnd > end ? end : bEnd;
-      if (overlapStart <= overlapEnd) {
-        intersections.push({ start: overlapStart, end: overlapEnd });
-      }
-    });
-
-    const mergedBilled = mergeIntervals(intersections);
-    const unbilledIntervals = subtractIntervals({ start, end }, mergedBilled);
-
-    const alreadyBilledDatesRange = formatIntervals(mergedBilled);
-    const unbilledDatesRange = formatIntervals(unbilledIntervals);
-
-    // 2. Fetch all holidays in this period (global OR customer-specific)
+    // 3. Fetch all holidays in this period (global OR customer-specific)
     const holidays = await Holiday.find({
       $or: [
         { customerId: null },
@@ -190,7 +192,6 @@ export async function POST(request: Request) {
       endDate: { $gte: start },
     });
 
-    // Helper function to check if a specific date is a holiday
     const isHoliday = (date: Date) => {
       const dTime = date.getTime();
       return holidays.some((h) => {
@@ -202,7 +203,6 @@ export async function POST(request: Request) {
       });
     };
 
-    // 3. Generate all dates in period
     const dates = getDatesInRange(start, end);
 
     // 4. Fetch ALL daily meal records and extra items in this date range
@@ -215,21 +215,6 @@ export async function POST(request: Request) {
       customerId,
       date: { $gte: start, $lte: end },
     });
-
-    // 5. Partition records into unbilled and already billed
-    const unbilledMealRecords = allMealRecords.filter(
-      (r) => r.billingStatus !== "BILLED" && r.billId == null
-    );
-    const billedMealRecords = allMealRecords.filter(
-      (r) => r.billingStatus === "BILLED" || r.billId != null
-    );
-
-    const unbilledExtraItems = allExtraItems.filter(
-      (item) => item.billingStatus !== "BILLED" && item.billId == null
-    );
-    const billedExtraItems = allExtraItems.filter(
-      (item) => item.billingStatus === "BILLED" || item.billId != null
-    );
 
     // Reusable function to aggregate meal records into details format
     const aggregateMeals = (records: typeof allMealRecords) => {
@@ -273,7 +258,7 @@ export async function POST(request: Request) {
       const details: any[] = [];
       Object.entries(mealTally).forEach(([type, info]) => {
         if (info.quantity > 0) {
-          const rate = Math.round((info.sumRates / info.quantity) * 100) / 100; // avg rate
+          const rate = Math.round((info.sumRates / info.quantity) * 100) / 100;
           details.push({
             type,
             quantity: info.quantity,
@@ -311,30 +296,19 @@ export async function POST(request: Request) {
       return details;
     };
 
-    // Aggregate tallies
-    const unbilledMealDetails = aggregateMeals(unbilledMealRecords);
-    const unbilledExtraItemsDetails = aggregateExtras(unbilledExtraItems);
-    const unbilledMealsSum = unbilledMealDetails.reduce((sum, m) => sum + m.amount, 0);
-    const unbilledExtrasSum = unbilledExtraItemsDetails.reduce((sum, e) => sum + e.amount, 0);
-    const unbilledConsumption = unbilledMealsSum + unbilledExtrasSum;
-
-    const billedMealDetails = aggregateMeals(billedMealRecords);
-    const billedExtraItemsDetails = aggregateExtras(billedExtraItems);
-    const billedMealsSum = billedMealDetails.reduce((sum, m) => sum + m.amount, 0);
-    const billedExtrasSum = billedExtraItemsDetails.reduce((sum, e) => sum + e.amount, 0);
-    const alreadyBilled = billedMealsSum + billedExtrasSum;
-
     const totalMealDetails = aggregateMeals(allMealRecords);
     const totalExtraItemsDetails = aggregateExtras(allExtraItems);
     const totalMealsSum = totalMealDetails.reduce((sum, m) => sum + m.amount, 0);
     const totalExtrasSum = totalExtraItemsDetails.reduce((sum, e) => sum + e.amount, 0);
     const totalConsumption = totalMealsSum + totalExtrasSum;
 
-    // 7. Calculate previous balance from unpaid bills that haven't been carried forward
+    // 5. Calculate previous balance from unpaid active bills from PRIOR billing cycles
     const previousUnpaidBills = await Bill.find({
       customerId,
+      status: { $nin: ["SUPERSEDED", "CANCELLED"] },
       paymentStatus: { $in: ["pending", "partially_paid"] },
       isCarriedForward: false,
+      billingPeriodEnd: { $lt: start },
     });
     const previousBalance = previousUnpaidBills.reduce((sum, b) => sum + (b.finalTotal - b.amountPaid), 0);
 
@@ -343,7 +317,7 @@ export async function POST(request: Request) {
     const explicitDisc = parseFloat(discount || 0);
     const disc = explicitDisc + customerFixedDiscount;
 
-    const subtotal = unbilledConsumption + previousBalance;
+    const subtotal = totalConsumption + previousBalance;
 
     // Determine advance payment to apply from customer's advance balance
     let advToApply = parseFloat(advancePayment || 0);
@@ -355,45 +329,49 @@ export async function POST(request: Request) {
 
     const finalTotal = Math.max(0, subtotal - disc - advToApply);
 
-    // 8. If this is a PREVIEW request, return calculated values and stop here
-    if (preview) {
-      // Find overlapping bills for this range for visual representation
-      const previewBills = await Bill.find({
-        customerId,
-        billingPeriodStart: { $lte: end },
-        billingPeriodEnd: { $gte: start },
-      })
-        .select("billNumber billingPeriodStart billingPeriodEnd finalTotal paymentStatus")
-        .sort({ createdAt: -1 });
+    // Payments already made towards existing active bills being superseded
+    const totalPaidOnSupersededBills = existingActiveBills.reduce((sum, b) => sum + (b.amountPaid || 0), 0);
+    const totalAmountPaid = totalPaidOnSupersededBills + advToApply;
 
+    let computedPaymentStatus: "pending" | "paid" | "partially_paid" = "pending";
+    if (totalAmountPaid >= finalTotal && finalTotal > 0) {
+      computedPaymentStatus = "paid";
+    } else if (totalAmountPaid > 0) {
+      computedPaymentStatus = "partially_paid";
+    } else if (finalTotal === 0) {
+      computedPaymentStatus = "paid";
+    }
+
+    // 6. If this is a PREVIEW request, return calculated values and stop here
+    if (preview) {
       return NextResponse.json({
         preview: true,
         totalConsumption,
-        alreadyBilled,
-        unbilledConsumption,
-        mealDetails: unbilledMealDetails,
-        extraItemsDetails: unbilledExtraItemsDetails,
+        alreadyBilled: 0,
+        unbilledConsumption: totalConsumption,
+        mealDetails: totalMealDetails,
+        extraItemsDetails: totalExtraItemsDetails,
         previousBalance,
         discount: disc,
         advancePayment: advToApply,
         finalTotal,
-        existingBills: previewBills,
-        alreadyBilledDatesRange,
-        unbilledDatesRange,
+        existingBills: existingActiveBills,
+        alreadyBilledDatesRange: "None",
+        unbilledDatesRange: formatIntervals([{ start, end }]),
       });
     }
 
-    // 9. Generation Mode validation: Do not create zero-value consumption bills
-    if (unbilledMealDetails.length === 0 && unbilledExtraItemsDetails.length === 0) {
+    // 7. Generation Mode validation: Do not create zero-value consumption bills if no meals/extras exist
+    if (totalMealDetails.length === 0 && totalExtraItemsDetails.length === 0) {
       return NextResponse.json(
         {
-          error: "No unbilled consumption found. All consumption for this period has already been included in existing bills.",
+          error: "No meal or extra item records found for this customer in the selected billing period.",
         },
         { status: 400 }
       );
     }
 
-    // 10. Generate invoice bill number
+    // 8. Generate invoice bill number
     const dateCode = `${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, "0")}`;
     const billsCount = await Bill.countDocuments();
     const billNumber = `SSM-${dateCode}-${String(billsCount + 1).padStart(4, "0")}`;
@@ -403,21 +381,22 @@ export async function POST(request: Request) {
       customerId,
       billingPeriodStart: start,
       billingPeriodEnd: end,
-      mealDetails: unbilledMealDetails,
-      extraItemsDetails: unbilledExtraItemsDetails,
+      mealDetails: totalMealDetails,
+      extraItemsDetails: totalExtraItemsDetails,
       discount: disc,
       advancePayment: advToApply,
       previousBalance,
       finalTotal,
       originalTotal: finalTotal,
       adjustmentAmount: 0,
-      paymentStatus: finalTotal === 0 ? "paid" : "pending",
-      amountPaid: 0,
+      paymentStatus: computedPaymentStatus,
+      status: "ACTIVE",
+      amountPaid: totalAmountPaid,
       isCarriedForward: false,
       notes,
     });
 
-    // 11. Transaction setup
+    // 9. Transaction setup
     try {
       session = await mongoose.startSession();
       session.startTransaction();
@@ -426,36 +405,62 @@ export async function POST(request: Request) {
       // Standalone MongoDB fallback
     }
 
-    // Lock consumed meals to this bill (optimistic concurrency update)
-    const unbilledMealIds = unbilledMealRecords.map((r) => r._id);
-    if (unbilledMealIds.length > 0) {
-      const updateResult = await DailyMealRecord.updateMany(
-        { _id: { $in: unbilledMealIds }, billingStatus: { $ne: "BILLED" } },
-        { $set: { billingStatus: "BILLED", billId: bill._id } },
-        transactionStarted && session ? { session } : undefined
-      );
-      if (updateResult.modifiedCount !== unbilledMealIds.length) {
-        throw new Error("Concurrency Conflict: Some meal records in this period have already been billed by another transaction.");
-      }
-    }
-
-    // Lock consumed extras to this bill (optimistic concurrency update)
-    const unbilledExtraIds = unbilledExtraItems.map((item) => item._id);
-    if (unbilledExtraIds.length > 0) {
-      const updateResult = await DailyMealItem.updateMany(
-        { _id: { $in: unbilledExtraIds }, billingStatus: { $ne: "BILLED" } },
-        { $set: { billingStatus: "BILLED", billId: bill._id } },
-        transactionStarted && session ? { session } : undefined
-      );
-      if (updateResult.modifiedCount !== unbilledExtraIds.length) {
-        throw new Error("Concurrency Conflict: Some extra items in this period have already been billed by another transaction.");
-      }
-    }
-
-    // Save the new bill
+    // Save the new bill first
     await bill.save(transactionStarted && session ? { session } : undefined);
 
-    // Mark old bills as carried forward
+    // Mark ALL older active bills for this customer in this period range as SUPERSEDED by the new bill
+    const olderBillIds = existingActiveBills.map((b) => b._id);
+    if (olderBillIds.length > 0) {
+      await Bill.updateMany(
+        { _id: { $in: olderBillIds } },
+        {
+          $set: {
+            status: "SUPERSEDED",
+            supersededBy: bill._id,
+            supersededAt: new Date(),
+          },
+        },
+        transactionStarted && session ? { session } : undefined
+      );
+
+      // Transfer any payments attached to superseded bills to the new consolidated bill
+      await Payment.updateMany(
+        { billId: { $in: olderBillIds } },
+        { $set: { billId: bill._id } },
+        transactionStarted && session ? { session } : undefined
+      );
+
+      await Payment.updateMany(
+        { "allocations.billId": { $in: olderBillIds } },
+        { $set: { "allocations.$[elem].billId": bill._id } },
+        {
+          arrayFilters: [{ "elem.billId": { $in: olderBillIds } }],
+          ...(transactionStarted && session ? { session } : {}),
+        }
+      );
+    }
+
+    // Associate ALL consumed meals in this period to the new consolidated bill
+    const allMealIds = allMealRecords.map((r) => r._id);
+    if (allMealIds.length > 0) {
+      await DailyMealRecord.updateMany(
+        { _id: { $in: allMealIds } },
+        { $set: { billingStatus: "BILLED", billId: bill._id } },
+        transactionStarted && session ? { session } : undefined
+      );
+    }
+
+    // Associate ALL consumed extras in this period to the new consolidated bill
+    const allExtraIds = allExtraItems.map((item) => item._id);
+    if (allExtraIds.length > 0) {
+      await DailyMealItem.updateMany(
+        { _id: { $in: allExtraIds } },
+        { $set: { billingStatus: "BILLED", billId: bill._id } },
+        transactionStarted && session ? { session } : undefined
+      );
+    }
+
+    // Mark prior cycle unpaid bills as carried forward
     if (previousUnpaidBills.length > 0) {
       await Bill.updateMany(
         { _id: { $in: previousUnpaidBills.map((b) => b._id) } },
@@ -473,7 +478,7 @@ export async function POST(request: Request) {
       const activeAdvances = await Payment.find({
         customerId,
         paymentType: "ADVANCE",
-        remainingAmount: { $gt: 0 }
+        remainingAmount: { $gt: 0 },
       }).sort({ paymentDate: 1 });
 
       for (const adv of activeAdvances) {
@@ -483,7 +488,7 @@ export async function POST(request: Request) {
         adv.allocations.push({
           billId: bill._id,
           amountApplied: toAllocate,
-          appliedAt: new Date()
+          appliedAt: new Date(),
         });
         await adv.save(transactionStarted && session ? { session } : undefined);
         creditNeeded -= toAllocate;
@@ -495,27 +500,24 @@ export async function POST(request: Request) {
       await session.commitTransaction();
     }
 
+    // Deliver in-app notification to customer
+    try {
+      await Notification.create({
+        customerId,
+        title: `New Bill Generated`,
+        message: `Invoice #${bill.billNumber} has been generated. Total amount payable: ₹${finalTotal}.`,
+        type: "bill_generated",
+        link: `/customer/bills/${bill._id}`,
+      });
+    } catch (notifErr) {
+      console.error("Failed to create customer notification:", notifErr);
+    }
+
     const populated = await Bill.findById(bill._id).populate("customerId", "name mobile address");
     return NextResponse.json(populated, { status: 201 });
   } catch (error: any) {
     if (transactionStarted && session) {
       await session.abortTransaction();
-    } else {
-      // Revert records if transaction wasn't active
-      if (bill && bill._id) {
-        try {
-          await DailyMealRecord.updateMany(
-            { billId: bill._id },
-            { $set: { billingStatus: "UNBILLED", billId: null } }
-          );
-          await DailyMealItem.updateMany(
-            { billId: bill._id },
-            { $set: { billingStatus: "UNBILLED", billId: null } }
-          );
-        } catch (revertError) {
-          console.error("Failed to revert meal/extra records status:", revertError);
-        }
-      }
     }
     console.error("Generate Bill API Error:", error);
     return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });

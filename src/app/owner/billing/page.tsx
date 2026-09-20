@@ -53,7 +53,24 @@ function BillingEngineContent() {
   // Search & Filter list states
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [updatingBillId, setUpdatingBillId] = useState<string | null>(null);
+
+  const monthsList = [
+    { value: "01", label: "January" },
+    { value: "02", label: "February" },
+    { value: "03", label: "March" },
+    { value: "04", label: "April" },
+    { value: "05", label: "May" },
+    { value: "06", label: "June" },
+    { value: "07", label: "July" },
+    { value: "08", label: "August" },
+    { value: "09", label: "September" },
+    { value: "10", label: "October" },
+    { value: "11", label: "November" },
+    { value: "12", label: "December" },
+  ];
 
   const handleUpdateBillStatus = async (billId: string, status: "paid" | "pending") => {
     setUpdatingBillId(billId);
@@ -69,7 +86,7 @@ function BillingEngineContent() {
           status === "paid" ? "Invoice marked as paid" : "Invoice marked as pending",
           "Invoice Updated"
         );
-        fetchBills();
+        fetchBills(selectedYear, selectedMonth);
       } else {
         throw new Error();
       }
@@ -80,10 +97,14 @@ function BillingEngineContent() {
     }
   };
 
-  const fetchBills = async () => {
+  const fetchBills = async (yr = selectedYear, mo = selectedMonth) => {
     setLoading(true);
     try {
-      const res = await fetch("/api/owner/billing");
+      let url = "/api/owner/billing";
+      if (mo && mo !== "all") {
+        url += `?month=${yr}-${mo}`;
+      }
+      const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to load invoice list");
       const data = await res.json();
       setBills(data);
@@ -107,9 +128,9 @@ function BillingEngineContent() {
   };
 
   useEffect(() => {
-    fetchBills();
+    fetchBills(selectedYear, selectedMonth);
     fetchCustomers();
-  }, []);
+  }, [selectedYear, selectedMonth]);
 
   // Pre-fill customer ID if passed in URL
   useEffect(() => {
@@ -579,6 +600,57 @@ function BillingEngineContent() {
           </div>
         </div>
       )}
+
+      {/* Month Navigation Tabs Bar (FEAT-007) */}
+      <div className="bg-card border border-border p-4 rounded-2xl shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4.5 w-4.5 text-primary" />
+            <h3 className="font-bold text-sm text-foreground">Billing Period Selector</h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-muted-foreground">Year:</span>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="bg-muted border border-border rounded-lg px-2.5 py-1 text-xs font-bold cursor-pointer focus:outline-none"
+            >
+              {[2025, 2026, 2027].map((yr) => (
+                <option key={yr} value={yr}>{yr}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Scrollable Month Navigation Bar */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setSelectedMonth("all")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${
+              selectedMonth === "all"
+                ? "bg-primary text-white shadow-sm glow-primary"
+                : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            All Months
+          </button>
+          {monthsList.map((m) => (
+            <button
+              key={m.value}
+              type="button"
+              onClick={() => setSelectedMonth(m.value)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${
+                selectedMonth === m.value
+                  ? "bg-primary text-white shadow-sm glow-primary"
+                  : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Filters Search Bar */}
       <div className="flex flex-col sm:flex-row gap-4">

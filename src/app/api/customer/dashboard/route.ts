@@ -45,12 +45,23 @@ export async function GET() {
       price: isSpecial ? (item.specialPrice || item.price) : item.price,
     }));
 
-    // 3. Current Outstanding Amount
-    const bills = await Bill.find({ customerId });
+    // 3. Current Outstanding Amount & Latest Bill
+    const bills = await Bill.find({ customerId, status: { $nin: ["SUPERSEDED", "CANCELLED"] } }).sort({ createdAt: -1 });
     let outstandingAmount = 0;
     bills.forEach((b) => {
       outstandingAmount += b.finalTotal - b.amountPaid;
     });
+
+    const latestBill = bills[0] ? {
+      _id: bills[0]._id,
+      billNumber: bills[0].billNumber,
+      finalTotal: bills[0].finalTotal,
+      amountPaid: bills[0].amountPaid,
+      paymentStatus: bills[0].paymentStatus,
+      billingPeriodStart: bills[0].billingPeriodStart,
+      billingPeriodEnd: bills[0].billingPeriodEnd,
+      createdAt: bills[0].createdAt,
+    } : null;
 
     // 4. Last 5 Payments
     const recentPayments = await Payment.find({ customerId })
@@ -82,6 +93,7 @@ export async function GET() {
       advanceBalance: customer?.advanceBalance || 0,
       recentPayments,
       menuItems,
+      latestBill,
     });
   } catch (error: any) {
     console.error("Customer Dashboard API Error:", error);

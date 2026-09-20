@@ -17,7 +17,9 @@ import {
   Menu as HamburgerMenu,
   X,
   User,
-  Loader2
+  Loader2,
+  Bell,
+  CheckCheck
 } from "lucide-react";
 
 interface SidebarItem {
@@ -44,6 +46,38 @@ export default function CustomerLayout({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [customerInfo, setCustomerInfo] = useState<{ name: string; username: string } | null>(null);
   const [messName, setMessName] = useState("Swami Samartha Mess");
+  
+  // Notification states
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await fetch("/api/customer/notifications");
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(data.notifications || []);
+        setUnreadCount(data.unreadCount || 0);
+      }
+    } catch (err) {
+      console.error("Error fetching notifications:", err);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await fetch("/api/customer/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markAll: true }),
+      });
+      setUnreadCount(0);
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    } catch (err) {
+      console.error("Error marking notifications as read:", err);
+    }
+  };
 
   useEffect(() => {
     async function checkAuthAndLoadSettings() {
@@ -58,6 +92,7 @@ export default function CustomerLayout({ children }: { children: ReactNode }) {
         }
 
         setCustomerInfo(authData.user);
+        fetchNotifications();
 
         // 2. Fetch business settings
         const settingsRes = await fetch("/api/owner/settings"); // public setting readable
@@ -214,9 +249,75 @@ export default function CustomerLayout({ children }: { children: ReactNode }) {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Notification Bell Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowNotifDropdown(!showNotifDropdown)}
+                className="p-2 rounded-xl border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted transition relative cursor-pointer"
+                aria-label="Notifications"
+              >
+                <Bell className="h-4.5 w-4.5" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 h-4 w-4 bg-rose-500 text-white font-black text-[9px] rounded-full flex items-center justify-center animate-pulse">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {showNotifDropdown && (
+                <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-card border border-border rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                  <div className="p-3.5 border-b border-border flex items-center justify-between bg-muted/30">
+                    <div className="flex items-center gap-2">
+                      <Bell className="h-4 w-4 text-primary" />
+                      <span className="font-bold text-xs text-foreground">Notifications</span>
+                      {unreadCount > 0 && (
+                        <span className="text-[10px] bg-primary text-white px-2 py-0.5 rounded-full font-extrabold">
+                          {unreadCount} unread
+                        </span>
+                      )}
+                    </div>
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={handleMarkAllRead}
+                        className="text-[10px] text-primary hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <CheckCheck className="h-3 w-3" />
+                        <span>Mark all read</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="max-h-80 overflow-y-auto divide-y divide-border">
+                    {notifications.length === 0 ? (
+                      <p className="text-xs text-muted-foreground py-6 text-center">No notifications yet.</p>
+                    ) : (
+                      notifications.map((n) => (
+                        <Link
+                          key={n._id}
+                          href={n.link || "/customer/bills"}
+                          onClick={() => setShowNotifDropdown(false)}
+                          className={`block p-3.5 transition hover:bg-muted/30 ${
+                            !n.read ? "bg-primary/5" : ""
+                          }`}
+                        >
+                          <div className="flex justify-between items-start gap-2">
+                            <span className="font-bold text-xs text-foreground block">{n.title}</span>
+                            <span className="text-[9px] text-muted-foreground whitespace-nowrap">
+                              {new Date(n.createdAt).toLocaleDateString("en-IN", { month: "short", day: "numeric" })}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1 leading-snug">{n.message}</p>
+                        </Link>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-xl border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted transition"
+              className="p-2 rounded-xl border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted transition cursor-pointer"
               aria-label="Toggle Theme"
             >
               {theme === "light" ? <Moon className="h-4.5 w-4.5" /> : <Sun className="h-4.5 w-4.5" />}

@@ -51,6 +51,9 @@ export interface IBill extends Document {
   adjustmentReason?: string;
   adjustmentHistory: IBillAdjustmentHistory[];
   paymentStatus: "pending" | "paid" | "partially_paid";
+  status: "ACTIVE" | "SUPERSEDED" | "CANCELLED";
+  supersededBy?: mongoose.Types.ObjectId | null;
+  supersededAt?: Date | null;
   amountPaid: number;
   isCarriedForward: boolean;
   notes?: string;
@@ -115,6 +118,14 @@ const BillSchema = new Schema<IBill>(
       default: "pending",
       index: true,
     },
+    status: {
+      type: String,
+      enum: ["ACTIVE", "SUPERSEDED", "CANCELLED"],
+      default: "ACTIVE",
+      index: true,
+    },
+    supersededBy: { type: Schema.Types.ObjectId, ref: "Bill", default: null, index: true },
+    supersededAt: { type: Date, default: null },
     amountPaid: { type: Number, required: true, default: 0 },
     isCarriedForward: { type: Boolean, required: true, default: false },
     notes: { type: String },
