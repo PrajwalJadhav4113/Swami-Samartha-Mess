@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useToast } from "@/components/ui/Toast";
 import { Receipt, FileText, ArrowRight, Loader2, IndianRupee } from "lucide-react";
 import Link from "next/link";
+import { formatBillingPeriod } from "@/lib/date-utils";
 
 interface BillItem {
   _id: string;
@@ -100,8 +101,7 @@ export default function CustomerBillsList() {
 
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground font-semibold">
                         <span>
-                          Period: {new Date(bill.billingPeriodStart).toLocaleDateString()} -{" "}
-                          {new Date(bill.billingPeriodEnd).toLocaleDateString()}
+                          Period: {formatBillingPeriod(bill.billingPeriodStart, bill.billingPeriodEnd)}
                         </span>
                         <span>Generated: {new Date(bill.createdAt).toLocaleDateString()}</span>
                       </div>
@@ -162,8 +162,7 @@ export default function CustomerBillsList() {
                         </span>
                       </div>
                       <div className="text-muted-foreground">
-                        Period: {new Date(bill.billingPeriodStart).toLocaleDateString()} -{" "}
-                        {new Date(bill.billingPeriodEnd).toLocaleDateString()}
+                        Period: {formatBillingPeriod(bill.billingPeriodStart, bill.billingPeriodEnd)}
                       </div>
                     </div>
                     <div className="flex items-center gap-4">

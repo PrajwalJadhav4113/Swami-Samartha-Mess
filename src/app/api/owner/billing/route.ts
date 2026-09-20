@@ -162,7 +162,7 @@ export async function POST(request: Request) {
     }
 
     const start = new Date(`${startDate}T00:00:00.000Z`);
-    const end = new Date(`${endDate}T00:00:00.000Z`);
+    const end = new Date(`${endDate}T23:59:59.999Z`);
 
     if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
       return NextResponse.json({ error: "Invalid billing period dates" }, { status: 400 });
@@ -181,6 +181,9 @@ export async function POST(request: Request) {
       billingPeriodEnd: { $gte: start },
       status: { $nin: ["SUPERSEDED", "CANCELLED"] },
     }).sort({ billingPeriodStart: 1 });
+
+    console.log(`[BILLING API] Generating bill for customer=${customer.name} (${customerId}), range=${startDate} to ${endDate}. Found ${existingActiveBills.length} existing active bill(s):`, existingActiveBills.map(b => ({ id: b._id.toString(), num: b.billNumber, status: b.status })));
+
 
     // 3. Fetch all holidays in this period (global OR customer-specific)
     const holidays = await Holiday.find({
@@ -410,19 +413,29 @@ export async function POST(request: Request) {
 
     // Mark ALL older active bills for this customer in this period range as SUPERSEDED by the new bill
     const olderBillIds = existingActiveBills.map((b) => b._id);
-    if (olderBillIds.length > 0) {
-      await Bill.updateMany(
-        { _id: { $in: olderBillIds } },
-        {
-          $set: {
-            status: "SUPERSEDED",
-            supersededBy: bill._id,
-            supersededAt: new Date(),
-          },
+    
+    // Perform atomic update for all older active bills for this customer in this period range
+    const supersededResult = await Bill.updateMany(
+      {
+        customerId,
+        _id: { $ne: bill._id },
+        billingPeriodStart: { $lte: end },
+        billingPeriodEnd: { $gte: start },
+        status: { $nin: ["SUPERSEDED", "CANCELLED"] },
+      },
+      {
+        $set: {
+          status: "SUPERSEDED",
+          supersededBy: bill._id,
+          supersededAt: new Date(),
         },
-        transactionStarted && session ? { session } : undefined
-      );
+      },
+      transactionStarted && session ? { session } : undefined
+    );
 
+    console.log(`[BILLING API] Marked older bills SUPERSEDED. Matched=${supersededResult.matchedCount}, Modified=${supersededResult.modifiedCount}`);
+
+    if (olderBillIds.length > 0) {
       // Transfer any payments attached to superseded bills to the new consolidated bill
       await Payment.updateMany(
         { billId: { $in: olderBillIds } },
@@ -439,6 +452,7 @@ export async function POST(request: Request) {
         }
       );
     }
+
 
     // Associate ALL consumed meals in this period to the new consolidated bill
     const allMealIds = allMealRecords.map((r) => r._id);
@@ -512,6 +526,14 @@ export async function POST(request: Request) {
     } catch (notifErr) {
       console.error("Failed to create customer notification:", notifErr);
     }
+
+    const activeBillsCount = await Bill.countDocuments({
+      customerId,
+      billingPeriodStart: { $lte: end },
+      billingPeriodEnd: { $gte: start },
+      status: { $nin: ["SUPERSEDED", "CANCELLED"] },
+    });
+    console.log(`[BILLING API VERIFICATION] New Bill ${bill.billNumber} saved. Customer ${customerId} now has ${activeBillsCount} active bill(s) for period.`);
 
     const populated = await Bill.findById(bill._id).populate("customerId", "name mobile address");
     return NextResponse.json(populated, { status: 201 });

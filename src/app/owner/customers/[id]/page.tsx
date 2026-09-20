@@ -22,6 +22,7 @@ import {
   Save
 } from "lucide-react";
 import Link from "next/link";
+import { formatBillingPeriod } from "@/lib/date-utils";
 
 interface CustomerDetail {
   _id: string;
@@ -794,7 +795,7 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
                       <tr key={b._id} className="hover:bg-muted/40 transition">
                         <td className="py-3.5 font-bold">{b.billNumber}</td>
                         <td className="py-3.5 text-xs text-muted-foreground">
-                          {new Date(b.billingPeriodStart).toLocaleDateString()} - {new Date(b.billingPeriodEnd).toLocaleDateString()}
+                          {formatBillingPeriod(b.billingPeriodStart, b.billingPeriodEnd)}
                         </td>
                         <td className="py-3.5">₹{b.finalTotal}</td>
                         <td className="py-3.5 text-rose-600">₹{b.finalTotal - b.amountPaid}</td>

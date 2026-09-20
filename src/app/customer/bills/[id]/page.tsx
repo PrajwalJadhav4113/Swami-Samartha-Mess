@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/Toast";
 import { ArrowLeft, Printer, Download, Loader2, CreditCard, QrCode } from "lucide-react";
 import Link from "next/link";
+import { formatBillingPeriod } from "@/lib/date-utils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -143,9 +144,7 @@ export default function CustomerBillDetailPage({ params }: { params: Promise<{ i
     doc.setFont("helvetica", "normal");
     doc.text(`Bill Date: ${new Date(bill.createdAt).toLocaleDateString()}`, 14, 51);
     doc.text(
-      `Billing Cycle: ${new Date(bill.billingPeriodStart).toLocaleDateString()} - ${new Date(
-        bill.billingPeriodEnd
-      ).toLocaleDateString()}`,
+      `Billing Cycle: ${formatBillingPeriod(bill.billingPeriodStart, bill.billingPeriodEnd)}`,
       14,
       57
     );
@@ -382,7 +381,7 @@ export default function CustomerBillDetailPage({ params }: { params: Promise<{ i
               Billing Period:
             </span>
             <span className="font-extrabold text-sm block mt-1">
-              {new Date(bill.billingPeriodStart).toLocaleDateString()} - {new Date(bill.billingPeriodEnd).toLocaleDateString()}
+              {formatBillingPeriod(bill.billingPeriodStart, bill.billingPeriodEnd)}
             </span>
             <span className="text-xs text-muted-foreground block mt-1.5">
               Cycle: Item-based ledger

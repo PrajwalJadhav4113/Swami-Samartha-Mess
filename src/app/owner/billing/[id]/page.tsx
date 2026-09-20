@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/Toast";
 import { ArrowLeft, Printer, Download, Trash2, Loader2, CreditCard, QrCode, CheckCircle, AlertCircle, Edit2, PlusCircle } from "lucide-react";
 import Link from "next/link";
+import { formatBillingPeriod } from "@/lib/date-utils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -91,6 +92,7 @@ interface BillData {
   adjustmentReason?: string;
   adjustmentHistory?: BillAdjustmentHistory[];
   paymentStatus: string;
+  status?: "ACTIVE" | "SUPERSEDED" | "CANCELLED";
   amountPaid: number;
   notes?: string;
   createdAt: string;
@@ -123,6 +125,7 @@ export default function BillDetailPage({ params }: { params: Promise<{ id: strin
   const [editDiscount, setEditDiscount] = useState(0);
   const [editAdvancePayment, setEditAdvancePayment] = useState(0);
   const [editPreviousBalance, setEditPreviousBalance] = useState(0);
+  const [editNotes, setEditNotes] = useState("");
   const [adjustmentReason, setAdjustmentReason] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -176,6 +179,7 @@ export default function BillDetailPage({ params }: { params: Promise<{ id: strin
           discount: editDiscount,
           advancePayment: editAdvancePayment,
           previousBalance: editPreviousBalance,
+          notes: editNotes,
           adjustmentReason: adjustmentReason,
         }),
       });
@@ -277,9 +281,7 @@ export default function BillDetailPage({ params }: { params: Promise<{ id: strin
     doc.setFont("helvetica", "normal");
     doc.text(`Bill Date: ${new Date(bill.createdAt).toLocaleDateString()}`, 14, 51);
     doc.text(
-      `Billing Cycle: ${new Date(bill.billingPeriodStart).toLocaleDateString()} - ${new Date(
-        bill.billingPeriodEnd
-      ).toLocaleDateString()}`,
+      `Billing Cycle: ${formatBillingPeriod(bill.billingPeriodStart, bill.billingPeriodEnd)}`,
       14,
       57
     );
@@ -475,21 +477,28 @@ export default function BillDetailPage({ params }: { params: Promise<{ id: strin
               <span>Mark as Pending</span>
             </button>
           )}
-          <button
-            onClick={() => {
-              setEditMealDetails(bill.mealDetails);
-              setEditExtraItemsDetails(bill.extraItemsDetails);
-              setEditDiscount(bill.discount);
-              setEditAdvancePayment(bill.advancePayment);
-              setEditPreviousBalance(bill.previousBalance);
-              setAdjustmentReason("");
-              setIsEditing(true);
-            }}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border bg-card hover:bg-muted text-xs font-semibold rounded-lg transition cursor-pointer shadow-sm"
-          >
-            <Edit2 className="h-3.5 w-3.5 text-primary" />
-            <span>Edit Bill</span>
-          </button>
+          {bill.status === "SUPERSEDED" ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 text-xs font-semibold rounded-lg cursor-not-allowed opacity-70">
+              <span>🔒 Read-Only (Superseded)</span>
+            </span>
+          ) : (
+            <button
+              onClick={() => {
+                setEditMealDetails(bill.mealDetails);
+                setEditExtraItemsDetails(bill.extraItemsDetails);
+                setEditDiscount(bill.discount);
+                setEditAdvancePayment(bill.advancePayment);
+                setEditPreviousBalance(bill.previousBalance);
+                setEditNotes(bill.notes || "");
+                setAdjustmentReason("");
+                setIsEditing(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border bg-card hover:bg-muted text-xs font-semibold rounded-lg transition cursor-pointer shadow-sm"
+            >
+              <Edit2 className="h-3.5 w-3.5 text-primary" />
+              <span>Edit Bill</span>
+            </button>
+          )}
           <button
             onClick={handlePrint}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border bg-card hover:bg-muted text-xs font-semibold rounded-lg transition cursor-pointer"
@@ -760,6 +769,20 @@ export default function BillDetailPage({ params }: { params: Promise<{ id: strin
             />
           </div>
 
+          {/* Notes field */}
+          <div>
+            <label className="text-xs font-bold text-muted-foreground uppercase block mb-1">
+              Internal Notes (Optional)
+            </label>
+            <input
+              type="text"
+              value={editNotes}
+              onChange={(e) => setEditNotes(e.target.value)}
+              placeholder="e.g. Customer on vacation last week"
+              className="w-full px-3 py-2.5 bg-muted border border-transparent rounded-xl focus:border-primary/20 focus:bg-card focus:outline-none transition text-sm font-semibold"
+            />
+          </div>
+
           {/* Save Button */}
           <div className="border-t border-border pt-4 flex gap-3 justify-end">
             <button
@@ -844,7 +867,7 @@ export default function BillDetailPage({ params }: { params: Promise<{ id: strin
               Billing Period:
             </span>
             <span className="font-extrabold text-sm block mt-1">
-              {new Date(bill.billingPeriodStart).toLocaleDateString()} - {new Date(bill.billingPeriodEnd).toLocaleDateString()}
+              {formatBillingPeriod(bill.billingPeriodStart, bill.billingPeriodEnd)}
             </span>
             <span className="text-xs text-muted-foreground block mt-1.5">
               Cycle: Item-based ledger

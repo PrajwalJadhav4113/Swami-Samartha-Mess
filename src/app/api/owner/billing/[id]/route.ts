@@ -165,12 +165,27 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     const { id } = await params;
     const body = await request.json();
-    const { mealDetails, extraItemsDetails, discount, advancePayment, previousBalance, adjustmentReason } = body;
+    const { mealDetails, extraItemsDetails, discount, advancePayment, previousBalance, adjustmentReason, notes } = body;
 
     await connectToDatabase();
     const bill = await Bill.findById(id);
     if (!bill) {
       return NextResponse.json({ error: "Bill not found" }, { status: 404 });
+    }
+
+    // Superseded bills are read-only — the active bill for the period must be edited instead
+    if (bill.status === "SUPERSEDED") {
+      return NextResponse.json(
+        { error: "This bill has been superseded and is read-only. Please edit the current active bill for this billing period." },
+        { status: 400 }
+      );
+    }
+
+    if (bill.status === "CANCELLED") {
+      return NextResponse.json(
+        { error: "This bill has been cancelled and cannot be edited." },
+        { status: 400 }
+      );
     }
 
     // 1. Calculate new amounts
@@ -358,6 +373,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     bill.adjustmentAmount = newFinalTotal - bill.originalTotal;
     bill.isAdjusted = true;
     bill.adjustmentReason = adjustmentReason || bill.adjustmentReason;
+    if (notes !== undefined) bill.notes = notes;
 
     // Handle Overpayment: Convert excess paid amount into customer advance credit (FEAT-008)
     if (bill.amountPaid > newFinalTotal) {

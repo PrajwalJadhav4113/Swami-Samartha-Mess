@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/components/ui/Toast";
 import { Receipt, PlusCircle, Search, Filter, Calendar, FileText, Loader2, IndianRupee } from "lucide-react";
 import Link from "next/link";
+import { formatBillingPeriod } from "@/lib/date-utils";
 
 interface CustomerSummary {
   _id: string;
@@ -315,7 +316,7 @@ function BillingEngineContent() {
                   <div className="flex justify-between">
                     <span className="text-muted-foreground font-semibold">Selected Period:</span>
                     <span className="font-bold">
-                      {new Date(startDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} – {new Date(endDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                      {formatBillingPeriod(startDate, endDate)}
                     </span>
                   </div>
                   {previewData.alreadyBilledDatesRange && previewData.alreadyBilledDatesRange !== "None" && (
@@ -725,7 +726,7 @@ function BillingEngineContent() {
                       <span>{b.customerId?.name || "Unknown"}</span>
                     </td>
                     <td className="px-6 py-4 text-xs text-muted-foreground">
-                      {new Date(b.billingPeriodStart).toLocaleDateString()} - {new Date(b.billingPeriodEnd).toLocaleDateString()}
+                      {formatBillingPeriod(b.billingPeriodStart, b.billingPeriodEnd)}
                     </td>
                     <td className="px-6 py-4">₹{b.finalTotal}</td>
                     <td className="px-6 py-4 text-rose-600">₹{b.finalTotal - b.amountPaid}</td>
@@ -797,7 +798,7 @@ function BillingEngineContent() {
                   <div>
                     <span className="text-[10px] text-muted-foreground block">Period</span>
                     <span className="font-semibold block truncate">
-                      {new Date(b.billingPeriodStart).toLocaleDateString("en-IN", {month: "short", day: "numeric"})} - {new Date(b.billingPeriodEnd).toLocaleDateString("en-IN", {month: "short", day: "numeric"})}
+                      {formatBillingPeriod(b.billingPeriodStart, b.billingPeriodEnd, "shortDate")}
                     </span>
                   </div>
                   <div>
