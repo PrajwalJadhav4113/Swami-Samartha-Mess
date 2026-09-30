@@ -89,11 +89,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
         await adv.save();
       }
     }
-    if (totalCreditRestored > 0) {
-      await Customer.findByIdAndUpdate(bill.customerId, {
-        $inc: { advanceBalance: totalCreditRestored }
-      });
-    }
+    const { syncCustomerAdvanceBalance } = await import("@/lib/billing-helper");
+    await syncCustomerAdvanceBalance(bill.customerId.toString());
 
     // 4. Delete payments registered for this bill
     await Payment.deleteMany({ billId: bill._id });
@@ -405,6 +402,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     }
 
     await bill.save();
+
+    // Authoritative sync of customer's available advance balance
+    const { syncCustomerAdvanceBalance } = await import("@/lib/billing-helper");
+    await syncCustomerAdvanceBalance(bill.customerId.toString());
 
     return NextResponse.json({ success: true, bill });
   } catch (error: any) {

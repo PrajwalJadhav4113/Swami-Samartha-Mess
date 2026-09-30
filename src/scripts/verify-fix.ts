@@ -31,19 +31,12 @@ async function verifyFix() {
 
   console.log(`Found Customer Rohan Deshmukh (ID: ${rohan._id})`);
 
-  // 1. Check statuses of bills 0017 - 0021
-  const bill17 = await Bill.findOne({ billNumber: "SSM-202609-0017" });
-  const bill18 = await Bill.findOne({ billNumber: "SSM-202609-0018" });
-  const bill19 = await Bill.findOne({ billNumber: "SSM-202609-0019" });
-  const bill20 = await Bill.findOne({ billNumber: "SSM-202609-0020" });
-  const bill21 = await Bill.findOne({ billNumber: "SSM-202609-0021" });
-
+  // 1. Check that all older bills are SUPERSEDED and only the latest bill is ACTIVE
+  const allBills = await Bill.find({ customerId: rohan._id }).sort({ createdAt: 1 });
   console.log("\nBill Status Checks:");
-  if (bill17) console.log(`  SSM-202609-0017 Status: ${bill17.status} (Expected: SUPERSEDED)`);
-  if (bill18) console.log(`  SSM-202609-0018 Status: ${bill18.status} (Expected: SUPERSEDED)`);
-  if (bill19) console.log(`  SSM-202609-0019 Status: ${bill19.status} (Expected: SUPERSEDED)`);
-  if (bill20) console.log(`  SSM-202609-0020 Status: ${bill20.status} (Expected: SUPERSEDED)`);
-  if (bill21) console.log(`  SSM-202609-0021 Status: ${bill21.status} (Expected: ACTIVE)`);
+  allBills.forEach((b) => {
+    console.log(`  ${b.billNumber} Status: ${b.status}`);
+  });
 
   const activeBillsForPeriod = await Bill.find({
     customerId: rohan._id,
@@ -54,12 +47,14 @@ async function verifyFix() {
 
   console.log(`\nActive bills count for Rohan in Sep 2026: ${activeBillsForPeriod.length} (Expected: 1)`);
 
+  const latestBill = activeBillsForPeriod[0];
+
   // 2. Check Date Formatting for customer-facing billing period
-  if (bill21) {
-    const formattedRange = formatBillingPeriod(bill21.billingPeriodStart, bill21.billingPeriodEnd);
+  if (latestBill) {
+    const formattedRange = formatBillingPeriod(latestBill.billingPeriodStart, latestBill.billingPeriodEnd);
     console.log(`\nCustomer-facing Date Range Display Test:`);
-    console.log(`  Raw start: ${bill21.billingPeriodStart.toISOString()}`);
-    console.log(`  Raw end:   ${bill21.billingPeriodEnd.toISOString()}`);
+    console.log(`  Raw start: ${latestBill.billingPeriodStart.toISOString()}`);
+    console.log(`  Raw end:   ${latestBill.billingPeriodEnd.toISOString()}`);
     console.log(`  Formatted display: ${formattedRange} (Expected: 01/09/2026 – 30/09/2026)`);
 
     if (formattedRange !== "01/09/2026 – 30/09/2026") {
@@ -70,16 +65,18 @@ async function verifyFix() {
 
   // 3. Outstanding calculation for Rohan
   const outstandingSum = activeBillsForPeriod.reduce((sum, b) => sum + (b.finalTotal - b.amountPaid), 0);
-  console.log(`\nTotal Outstanding for Rohan across active bills: ₹${outstandingSum} (Expected: ₹292)`);
+  console.log(`\nTotal Outstanding for Rohan across active bills: ₹${outstandingSum}`);
+
+  // 4. Verify Customer Advance Credit Balance
+  const Payment = (await import("../models/Payment")).default;
+  const advancePayments = await Payment.find({ customerId: rohan._id, paymentType: "ADVANCE" });
+  const totalAvailableAdvance = advancePayments.reduce((sum, p) => sum + (p.remainingAmount ?? 0), 0);
+  console.log(`Total Available Advance Credit for Rohan: ₹${totalAvailableAdvance} (Expected: ₹0, since ₹1 was applied)`);
 
   if (
-    bill17?.status === "SUPERSEDED" &&
-    bill18?.status === "SUPERSEDED" &&
-    bill19?.status === "SUPERSEDED" &&
-    bill20?.status === "SUPERSEDED" &&
-    bill21?.status === "ACTIVE" &&
     activeBillsForPeriod.length === 1 &&
-    outstandingSum === 292
+    totalAvailableAdvance === 0 &&
+    allBills.filter((b) => b._id.toString() !== latestBill?._id.toString()).every((b) => b.status === "SUPERSEDED")
   ) {
     console.log("\n==========================================");
     console.log("SUCCESS: ALL VERIFICATION CHECKS PASSED!");

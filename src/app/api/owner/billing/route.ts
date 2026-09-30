@@ -483,11 +483,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Update customer advance balance and perform FIFO credit allocation
+    // Perform FIFO credit allocation from active advance payments and sync customer advance balance
     if (advToApply > 0) {
-      customer.advanceBalance = (customer.advanceBalance || 0) - advToApply;
-      await customer.save(transactionStarted && session ? { session } : undefined);
-
       let creditNeeded = advToApply;
       const activeAdvances = await Payment.find({
         customerId,
@@ -508,6 +505,10 @@ export async function POST(request: Request) {
         creditNeeded -= toAllocate;
       }
     }
+
+    // Authoritative sync of customer's available advance credit
+    const { syncCustomerAdvanceBalance } = await import("@/lib/billing-helper");
+    await syncCustomerAdvanceBalance(customerId, transactionStarted && session ? session : undefined);
 
     // Commit Transaction
     if (transactionStarted && session) {

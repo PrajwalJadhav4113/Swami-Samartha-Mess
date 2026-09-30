@@ -162,6 +162,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     await payment.save();
 
+    // Authoritative sync of customer available advance credit balance
+    const { syncCustomerAdvanceBalance } = await import("@/lib/billing-helper");
+    await syncCustomerAdvanceBalance(payment.customerId.toString());
+
     // Re-populate for response
     const populated = await Payment.findById(payment._id)
       .populate("customerId", "name mobile advanceBalance")

@@ -101,9 +101,9 @@ export async function POST(request: Request) {
         await bill.save();
       }
     } else if (payType === "ADVANCE") {
-      // General payment (Advance Payment)
-      customer.advanceBalance = (customer.advanceBalance || 0) + numericAmount;
-      await customer.save();
+      // General payment (Advance Payment) - Sync authoritative available advance balance
+      const { syncCustomerAdvanceBalance } = await import("@/lib/billing-helper");
+      await syncCustomerAdvanceBalance(customerId);
     }
 
     const populated = await Payment.findById(payment._id)

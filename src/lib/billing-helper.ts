@@ -146,3 +146,31 @@ export async function getBillDetailedLogs(
 
   return dailyRecords;
 }
+
+/**
+ * Synchronizes a customer's available advance credit (customer.advanceBalance)
+ * with the sum of remaining unallocated amounts on all their active ADVANCE payments.
+ * Ensures an authoritative, single source of truth for available credit.
+ */
+export async function syncCustomerAdvanceBalance(customerId: string, session?: any): Promise<number> {
+  const Customer = (await import("@/models/Customer")).default;
+  const Payment = (await import("@/models/Payment")).default;
+
+  const activeAdvances = await Payment.find(
+    { customerId, paymentType: "ADVANCE" },
+    null,
+    session ? { session } : undefined
+  );
+
+  const totalAvailable = activeAdvances.reduce((sum, p) => sum + (p.remainingAmount || 0), 0);
+  const sanitizedAvailable = Math.max(0, totalAvailable);
+
+  await Customer.findByIdAndUpdate(
+    customerId,
+    { $set: { advanceBalance: sanitizedAvailable } },
+    session ? { session } : undefined
+  );
+
+  return sanitizedAvailable;
+}
+
