@@ -228,7 +228,7 @@ export default function CustomerBillDetailPage({ params }: { params: Promise<{ i
     }
 
     if (bill.advancePayment > 0) {
-      doc.text("Advance Payment:", 120, currentY);
+      doc.text("Advance Credit Applied:", 120, currentY);
       doc.text(`- Rs. ${bill.advancePayment}`, 196, currentY, { align: "right" });
       currentY += 6;
     }
@@ -237,22 +237,22 @@ export default function CustomerBillDetailPage({ params }: { params: Promise<{ i
     doc.line(120, currentY, 196, currentY);
     currentY += 6;
 
-    // Final Total
+    // Amount Payable
     doc.setFont("helvetica", "bold");
-    doc.text("Final Total Amount:", 120, currentY);
+    doc.text("Amount Payable:", 120, currentY);
     doc.text(`Rs. ${bill.finalTotal}`, 196, currentY, { align: "right" });
     currentY += 6;
 
-    // Paid
+    // Direct Bill Payment
     doc.setFont("helvetica", "normal");
-    doc.text("Amount Paid:", 120, currentY);
+    doc.text("Bill Payment After Generation:", 120, currentY);
     doc.text(`Rs. ${bill.amountPaid}`, 196, currentY, { align: "right" });
     currentY += 6;
 
     // Net Outstanding
     doc.setFont("helvetica", "bold");
     doc.text("Net Balance Due:", 120, currentY);
-    doc.text(`Rs. ${bill.finalTotal - bill.amountPaid}`, 196, currentY, { align: "right" });
+    doc.text(`Rs. ${Math.max(0, bill.finalTotal - bill.amountPaid)}`, 196, currentY, { align: "right" });
     currentY += 10;
 
     // Payment notice
@@ -532,7 +532,7 @@ export default function CustomerBillDetailPage({ params }: { params: Promise<{ i
 
             {bill.advancePayment > 0 && (
               <div className="flex items-center justify-between text-emerald-600">
-                <span>Advance Applied:</span>
+                <span>Advance Credit Applied:</span>
                 <span>- ₹{bill.advancePayment}</span>
               </div>
             )}
@@ -553,12 +553,12 @@ export default function CustomerBillDetailPage({ params }: { params: Promise<{ i
             )}
 
             <div className="flex items-center justify-between text-base font-black">
-              <span>Final Bill Total:</span>
+              <span>Amount Payable:</span>
               <span>₹{bill.finalTotal}</span>
             </div>
 
             <div className="flex items-center justify-between text-muted-foreground text-xs">
-              <span>Amount Paid:</span>
+              <span>Bill Payment After Generation:</span>
               <span>₹{bill.amountPaid}</span>
             </div>
 

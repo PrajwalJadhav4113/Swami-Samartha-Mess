@@ -174,3 +174,34 @@ export async function syncCustomerAdvanceBalance(customerId: string, session?: a
   return sanitizedAvailable;
 }
 
+/**
+ * Releases any advance credit allocations associated with a specific bill,
+ * restoring the remainingAmount on the advance payment records.
+ */
+export async function releaseBillAdvanceAllocations(
+  billId: string | any,
+  session?: any
+): Promise<number> {
+  const Payment = (await import("@/models/Payment")).default;
+
+  const appliedAdvances = await Payment.find(
+    { "allocations.billId": billId },
+    null,
+    session ? { session } : undefined
+  );
+
+  let totalCreditRestored = 0;
+  for (const adv of appliedAdvances) {
+    const alloc = adv.allocations.find((a: any) => a.billId.toString() === billId.toString());
+    if (alloc) {
+      totalCreditRestored += alloc.amountApplied;
+      adv.remainingAmount = (adv.remainingAmount || 0) + alloc.amountApplied;
+      adv.allocations = adv.allocations.filter((a: any) => a.billId.toString() !== billId.toString());
+      await adv.save(session ? { session } : undefined);
+    }
+  }
+
+  return totalCreditRestored;
+}
+
+

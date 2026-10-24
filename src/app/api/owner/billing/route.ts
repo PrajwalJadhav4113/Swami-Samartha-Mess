@@ -10,6 +10,7 @@ import Notification from "@/models/Notification";
 import { verifyToken } from "@/lib/jwt";
 import { cookies } from "next/headers";
 import mongoose from "mongoose";
+import { syncCustomerAdvanceBalance, releaseBillAdvanceAllocations } from "@/lib/billing-helper";
 
 async function isOwner() {
   const cookieStore = await cookies();
@@ -88,7 +89,7 @@ function subtractIntervals(selected: DateInterval, billed: DateInterval[]): Date
 function formatIntervals(intervals: DateInterval[]): string {
   if (intervals.length === 0) return "None";
   const formatDate = (d: Date) => {
-    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+    return d.toLocaleDateString("en-IN", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
   };
   return intervals
     .map((val) => {
@@ -125,6 +126,12 @@ export async function GET(request: Request) {
       const [yrStr, moStr] = month.split("-");
       const yr = parseInt(yrStr);
       const mo = parseInt(moStr) - 1; // 0-indexed month
+
+      // Validate month is between 0 and 11 (inclusive)
+      if (mo < 0 || mo > 11) {
+        return NextResponse.json({ error: "Invalid month" }, { status: 400 });
+      }
+
       const mStart = new Date(Date.UTC(yr, mo, 1, 0, 0, 0, 0));
       const mEnd = new Date(Date.UTC(yr, mo + 1, 0, 23, 59, 59, 999));
 
@@ -322,27 +329,62 @@ export async function POST(request: Request) {
 
     const subtotal = totalConsumption + previousBalance;
 
-    // Determine advance payment to apply from customer's advance balance
-    let advToApply = parseFloat(advancePayment || 0);
-    if (customer.advanceBalance && customer.advanceBalance > 0) {
-      if (advToApply === 0) {
-        advToApply = Math.min(customer.advanceBalance, subtotal - disc);
+    const olderBillIds = existingActiveBills.map((b) => b._id);
+
+    // Calculate advance credit currently locked in older active bills that will be superseded
+    let creditLockedInOlderBills = 0;
+    if (olderBillIds.length > 0) {
+      const paymentsWithOlderAllocations = await Payment.find({
+        "allocations.billId": { $in: olderBillIds },
+      });
+      for (const p of paymentsWithOlderAllocations) {
+        for (const alloc of p.allocations) {
+          if (olderBillIds.some((id) => id.toString() === alloc.billId.toString())) {
+            creditLockedInOlderBills += alloc.amountApplied;
+          }
+        }
       }
     }
 
+    // Authoritative sync of customer's available unapplied advance credit
+    await syncCustomerAdvanceBalance(customerId);
+
+    // Read current unapplied available advance credit directly from customer record
+    const updatedCustomer = await Customer.findById(customerId);
+    const unallocatedAdvance = Math.max(0, updatedCustomer?.advanceBalance || 0);
+    // Total effective available advance includes unallocated credit + credit from older bills being superseded
+    const availableAdvance = unallocatedAdvance + creditLockedInOlderBills;
+
+    // Determine advance payment to apply from customer's available advance credit
+    let advToApply = parseFloat(advancePayment || 0);
+    const maxAllowedPreviewAdv = Math.min(availableAdvance, Math.max(0, subtotal - disc));
+    if (parseFloat(advancePayment || 0) === 0) {
+      advToApply = maxAllowedPreviewAdv;
+    } else {
+      advToApply = Math.min(advToApply, maxAllowedPreviewAdv);
+    }
+    if (advToApply < 0) advToApply = 0;
+
     const finalTotal = Math.max(0, subtotal - disc - advToApply);
 
-    // Payments already made towards existing active bills being superseded
-    const totalPaidOnSupersededBills = existingActiveBills.reduce((sum, b) => sum + (b.amountPaid || 0), 0);
-    const totalAmountPaid = totalPaidOnSupersededBills + advToApply;
+    // Direct BILL_PAYMENT transactions already made towards existing active bills being superseded
+    let totalPaidOnSupersededBills = 0;
+    if (olderBillIds.length > 0) {
+      const directPaymentsOnSuperseded = await Payment.find({
+        billId: { $in: olderBillIds },
+        paymentType: "BILL_PAYMENT",
+      });
+      totalPaidOnSupersededBills = directPaymentsOnSuperseded.reduce((sum, p) => sum + p.amount, 0);
+    }
+    const totalAmountPaid = totalPaidOnSupersededBills; // ONLY direct bill payments, NOT advance credit!
 
     let computedPaymentStatus: "pending" | "paid" | "partially_paid" = "pending";
-    if (totalAmountPaid >= finalTotal && finalTotal > 0) {
+    if (finalTotal === 0 || totalAmountPaid >= finalTotal) {
       computedPaymentStatus = "paid";
     } else if (totalAmountPaid > 0) {
       computedPaymentStatus = "partially_paid";
-    } else if (finalTotal === 0) {
-      computedPaymentStatus = "paid";
+    } else {
+      computedPaymentStatus = "pending";
     }
 
     // 6. If this is a PREVIEW request, return calculated values and stop here
@@ -356,7 +398,9 @@ export async function POST(request: Request) {
         extraItemsDetails: totalExtraItemsDetails,
         previousBalance,
         discount: disc,
+        availableAdvanceCredit: availableAdvance,
         advancePayment: advToApply,
+        amountPayable: finalTotal,
         finalTotal,
         existingBills: existingActiveBills,
         alreadyBilledDatesRange: "None",
@@ -374,32 +418,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 8. Generate invoice bill number
-    const dateCode = `${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, "0")}`;
-    const billsCount = await Bill.countDocuments();
-    const billNumber = `SSM-${dateCode}-${String(billsCount + 1).padStart(4, "0")}`;
-
-    bill = new Bill({
-      billNumber,
-      customerId,
-      billingPeriodStart: start,
-      billingPeriodEnd: end,
-      mealDetails: totalMealDetails,
-      extraItemsDetails: totalExtraItemsDetails,
-      discount: disc,
-      advancePayment: advToApply,
-      previousBalance,
-      finalTotal,
-      originalTotal: finalTotal,
-      adjustmentAmount: 0,
-      paymentStatus: computedPaymentStatus,
-      status: "ACTIVE",
-      amountPaid: totalAmountPaid,
-      isCarriedForward: false,
-      notes,
-    });
-
-    // 9. Transaction setup
+    // 8. Transaction setup BEFORE generating and saving bill
     try {
       session = await mongoose.startSession();
       session.startTransaction();
@@ -408,13 +427,123 @@ export async function POST(request: Request) {
       // Standalone MongoDB fallback
     }
 
-    // Save the new bill first
-    await bill.save(transactionStarted && session ? { session } : undefined);
+    // Release advance credit allocations from older active bills about to be superseded
+    for (const oldId of olderBillIds) {
+      await releaseBillAdvanceAllocations(oldId, transactionStarted && session ? session : undefined);
+    }
+    await syncCustomerAdvanceBalance(customerId, transactionStarted && session ? session : undefined);
+
+    // Fetch fresh customer record after releasing older bills to get actual available credit
+    const freshCustomer = await Customer.findById(customerId, null, transactionStarted && session ? { session } : undefined);
+    const actualAvailableAdvance = Math.max(0, freshCustomer?.advanceBalance || 0);
+
+    const reqAdv = parseFloat(advancePayment || 0);
+    // Explicit backend validation: Reject if user explicitly requested more advance than available
+    if (reqAdv > 0 && reqAdv > actualAvailableAdvance) {
+      if (transactionStarted && session) await session.abortTransaction();
+      return NextResponse.json(
+        { error: `Requested advance credit (₹${reqAdv}) exceeds available credit (₹${actualAvailableAdvance}).` },
+        { status: 400 }
+      );
+    }
+
+    // Determine final advance to apply
+    const maxAllowedAdv = Math.min(actualAvailableAdvance, Math.max(0, subtotal - disc));
+    if (reqAdv > 0) {
+      advToApply = Math.min(reqAdv, maxAllowedAdv);
+    } else {
+      advToApply = maxAllowedAdv;
+    }
+    if (advToApply < 0) advToApply = 0;
+
+    const genFinalTotal = Math.max(0, subtotal - disc - advToApply);
+    let genComputedPaymentStatus: "pending" | "paid" | "partially_paid" = "pending";
+    if (genFinalTotal === 0 || totalAmountPaid >= genFinalTotal) {
+      genComputedPaymentStatus = "paid";
+    } else if (totalAmountPaid > 0) {
+      genComputedPaymentStatus = "partially_paid";
+    } else {
+      genComputedPaymentStatus = "pending";
+    }
+
+    // Generate invoice bill number with retry logic
+    const dateCode = `${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+    let billNumber = null;
+    let billSaved = false;
+    let billsCount = await Bill.countDocuments();
+    let attempt = 0;
+    const maxAttempts = 5;
+
+    while (!billSaved && attempt < maxAttempts) {
+      if (attempt > 0) {
+        billsCount = await Bill.countDocuments();
+      }
+
+      const proposedBillNumber = `SSM-${dateCode}-${String(billsCount + 1 + attempt).padStart(4, "0")}`;
+
+      bill = new Bill({
+        billNumber: proposedBillNumber,
+        customerId,
+        billingPeriodStart: start,
+        billingPeriodEnd: end,
+        mealDetails: totalMealDetails,
+        extraItemsDetails: totalExtraItemsDetails,
+        discount: disc,
+        advancePayment: advToApply,
+        previousBalance,
+        finalTotal: genFinalTotal,
+        originalTotal: genFinalTotal,
+        adjustmentAmount: 0,
+        paymentStatus: genComputedPaymentStatus,
+        status: "ACTIVE",
+        amountPaid: totalAmountPaid,
+        isCarriedForward: false,
+        notes,
+      });
+
+      try {
+        await bill.save(transactionStarted && session ? { session } : undefined);
+        billNumber = proposedBillNumber;
+        billSaved = true;
+      } catch (saveError: any) {
+        if (saveError.code === 11000 && attempt < maxAttempts - 1) {
+          attempt++;
+          continue;
+        } else {
+          throw saveError;
+        }
+      }
+    }
+
+    if (!billSaved) {
+      const timestamp = Date.now().toString(36);
+      const random = Math.random().toString(36).substring(2, 6);
+      billNumber = `SSM-${dateCode}-${timestamp}-${random}`;
+
+      bill = new Bill({
+        billNumber,
+        customerId,
+        billingPeriodStart: start,
+        billingPeriodEnd: end,
+        mealDetails: totalMealDetails,
+        extraItemsDetails: totalExtraItemsDetails,
+        discount: disc,
+        advancePayment: advToApply,
+        previousBalance,
+        finalTotal: genFinalTotal,
+        originalTotal: genFinalTotal,
+        adjustmentAmount: 0,
+        paymentStatus: genComputedPaymentStatus,
+        status: "ACTIVE",
+        amountPaid: totalAmountPaid,
+        isCarriedForward: false,
+        notes,
+      });
+
+      await bill.save(transactionStarted && session ? { session } : undefined);
+    }
 
     // Mark ALL older active bills for this customer in this period range as SUPERSEDED by the new bill
-    const olderBillIds = existingActiveBills.map((b) => b._id);
-    
-    // Perform atomic update for all older active bills for this customer in this period range
     const supersededResult = await Bill.updateMany(
       {
         customerId,
@@ -436,23 +565,13 @@ export async function POST(request: Request) {
     console.log(`[BILLING API] Marked older bills SUPERSEDED. Matched=${supersededResult.matchedCount}, Modified=${supersededResult.modifiedCount}`);
 
     if (olderBillIds.length > 0) {
-      // Transfer any payments attached to superseded bills to the new consolidated bill
+      // Transfer any direct BILL_PAYMENT payments attached to superseded bills to the new consolidated bill
       await Payment.updateMany(
-        { billId: { $in: olderBillIds } },
+        { billId: { $in: olderBillIds }, paymentType: "BILL_PAYMENT" },
         { $set: { billId: bill._id } },
         transactionStarted && session ? { session } : undefined
       );
-
-      await Payment.updateMany(
-        { "allocations.billId": { $in: olderBillIds } },
-        { $set: { "allocations.$[elem].billId": bill._id } },
-        {
-          arrayFilters: [{ "elem.billId": { $in: olderBillIds } }],
-          ...(transactionStarted && session ? { session } : {}),
-        }
-      );
     }
-
 
     // Associate ALL consumed meals in this period to the new consolidated bill
     const allMealIds = allMealRecords.map((r) => r._id);
@@ -486,11 +605,15 @@ export async function POST(request: Request) {
     // Perform FIFO credit allocation from active advance payments and sync customer advance balance
     if (advToApply > 0) {
       let creditNeeded = advToApply;
-      const activeAdvances = await Payment.find({
-        customerId,
-        paymentType: "ADVANCE",
-        remainingAmount: { $gt: 0 },
-      }).sort({ paymentDate: 1 });
+      const activeAdvances = await Payment.find(
+        {
+          customerId,
+          paymentType: "ADVANCE",
+          remainingAmount: { $gt: 0 },
+        },
+        null,
+        transactionStarted && session ? { session } : undefined
+      ).sort({ paymentDate: 1 });
 
       for (const adv of activeAdvances) {
         if (creditNeeded <= 0) break;
@@ -507,7 +630,6 @@ export async function POST(request: Request) {
     }
 
     // Authoritative sync of customer's available advance credit
-    const { syncCustomerAdvanceBalance } = await import("@/lib/billing-helper");
     await syncCustomerAdvanceBalance(customerId, transactionStarted && session ? session : undefined);
 
     // Commit Transaction

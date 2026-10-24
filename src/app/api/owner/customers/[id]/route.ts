@@ -40,7 +40,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const activeBills = bills.filter(
       (b) => !b.isCarriedForward && b.status !== "SUPERSEDED" && b.status !== "CANCELLED"
     );
-    const outstanding = activeBills.reduce((sum, b) => sum + (b.finalTotal - b.amountPaid), 0);
+    const outstanding = activeBills.reduce((sum, b) => sum + Math.max(0, b.finalTotal - b.amountPaid), 0);
 
     const customerObj = customer.toObject();
 

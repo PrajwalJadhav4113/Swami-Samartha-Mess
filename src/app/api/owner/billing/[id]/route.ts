@@ -312,51 +312,40 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     // Handle advance payment re-allocation if it has changed
     if (bill.advancePayment !== adv) {
-      // 1. Release previous allocations for this bill
-      const appliedAdvances = await Payment.find({ "allocations.billId": bill._id });
-      let totalCreditRestored = 0;
-      for (const advPay of appliedAdvances) {
-        const allocation = advPay.allocations.find((a: any) => a.billId.toString() === bill._id.toString());
-        if (allocation) {
-          totalCreditRestored += allocation.amountApplied;
-          advPay.remainingAmount += allocation.amountApplied;
-          advPay.allocations = advPay.allocations.filter((a: any) => a.billId.toString() !== bill._id.toString());
-          await advPay.save();
-        }
+      const { releaseBillAdvanceAllocations, syncCustomerAdvanceBalance } = await import("@/lib/billing-helper");
+      await releaseBillAdvanceAllocations(bill._id);
+      await syncCustomerAdvanceBalance(bill.customerId.toString());
+
+      const customer = await Customer.findById(bill.customerId);
+      const availableCredit = Math.max(0, customer?.advanceBalance || 0);
+
+      if (adv > availableCredit) {
+        return NextResponse.json(
+          { error: `Requested advance credit (₹${adv}) exceeds available credit (₹${availableCredit}).` },
+          { status: 400 }
+        );
       }
 
-      // Add back the restored credit to customer's advance balance first
-      const customer = await Customer.findById(bill.customerId);
-      if (customer) {
-        customer.advanceBalance = (customer.advanceBalance || 0) + totalCreditRestored;
-        
-        // 2. Allocate the new amount from available advance payments
-        if (adv > 0) {
-          let creditNeeded = adv;
-          const activeAdvances = await Payment.find({
-            customerId: customer._id,
-            paymentType: "ADVANCE",
-            remainingAmount: { $gt: 0 }
-          }).sort({ paymentDate: 1 });
+      if (customer && adv > 0) {
+        let creditNeeded = adv;
+        const activeAdvances = await Payment.find({
+          customerId: customer._id,
+          paymentType: "ADVANCE",
+          remainingAmount: { $gt: 0 },
+        }).sort({ paymentDate: 1 });
 
-          for (const advPay of activeAdvances) {
-            if (creditNeeded <= 0) break;
-            const toAllocate = Math.min(advPay.remainingAmount, creditNeeded);
-            advPay.remainingAmount -= toAllocate;
-            advPay.allocations.push({
-              billId: bill._id,
-              amountApplied: toAllocate,
-              appliedAt: new Date()
-            });
-            await advPay.save();
-            creditNeeded -= toAllocate;
-          }
-
-          // Deduct from customer's advance balance
-          customer.advanceBalance = Math.max(0, customer.advanceBalance - adv);
+        for (const advPay of activeAdvances) {
+          if (creditNeeded <= 0) break;
+          const toAllocate = Math.min(advPay.remainingAmount, creditNeeded);
+          advPay.remainingAmount -= toAllocate;
+          advPay.allocations.push({
+            billId: bill._id,
+            amountApplied: toAllocate,
+            appliedAt: new Date(),
+          });
+          await advPay.save();
+          creditNeeded -= toAllocate;
         }
-
-        await customer.save();
       }
     }
 
@@ -373,7 +362,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (notes !== undefined) bill.notes = notes;
 
     // Handle Overpayment: Convert excess paid amount into customer advance credit (FEAT-008)
-    if (bill.amountPaid > newFinalTotal) {
+    if (bill.amountPaid > newFinalTotal && newFinalTotal > 0) {
       const excessCredit = bill.amountPaid - newFinalTotal;
       const custObj = await Customer.findById(bill.customerId);
       if (custObj) {
@@ -392,8 +381,9 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
           allocations: [],
         });
       }
+      bill.amountPaid = newFinalTotal;
       bill.paymentStatus = "paid";
-    } else if (bill.amountPaid === newFinalTotal) {
+    } else if (bill.amountPaid >= newFinalTotal || newFinalTotal === 0) {
       bill.paymentStatus = "paid";
     } else if (bill.amountPaid > 0) {
       bill.paymentStatus = "partially_paid";

@@ -8,6 +8,7 @@ import DailyMealItem from "@/models/DailyMealItem";
 import Holiday from "@/models/Holiday";
 import Notification from "@/models/Notification";
 import mongoose from "mongoose";
+import { syncCustomerAdvanceBalance, releaseBillAdvanceAllocations } from "@/lib/billing-helper";
 
 function getDatesInRange(startDate: Date, endDate: Date): Date[] {
   const dates: Date[] = [];
@@ -202,28 +203,48 @@ export async function POST(request: Request) {
       });
       const previousBalance = previousUnpaidBills.reduce((sum, b) => sum + (b.finalTotal - b.amountPaid), 0);
 
+      const olderBillIds = existingActiveBills.map((b) => b._id);
+      const olderBillIdsStr = olderBillIds.map((id) => id.toString());
+
+      // Release advance allocations from older active bills about to be superseded
+      for (const oldId of olderBillIds) {
+        await releaseBillAdvanceAllocations(oldId);
+      }
+      await syncCustomerAdvanceBalance(customerId);
+
+      // Fetch updated customer record for accurate advance credit balance
+      const updatedCustomer = await Customer.findById(customerId);
+      const availableAdvance = updatedCustomer?.advanceBalance || 0;
+
       const customerFixedDiscount = customer.fixedDiscount || 0;
       const subtotal = totalConsumption + previousBalance;
 
       // Determine available advance credit to apply
       let advToApply = 0;
-      if (customer.advanceBalance && customer.advanceBalance > 0) {
-        advToApply = Math.min(customer.advanceBalance, subtotal - customerFixedDiscount);
+      if (availableAdvance > 0) {
+        advToApply = Math.min(availableAdvance, Math.max(0, subtotal - customerFixedDiscount));
       }
 
       const finalTotal = Math.max(0, subtotal - customerFixedDiscount - advToApply);
 
-      // Payments already made towards existing active bills being superseded
-      const totalPaidOnSupersededBills = existingActiveBills.reduce((sum, b) => sum + (b.amountPaid || 0), 0);
-      const totalAmountPaid = totalPaidOnSupersededBills + advToApply;
+      // Direct BILL_PAYMENT transactions already made towards existing active bills being superseded
+      let totalPaidOnSupersededBills = 0;
+      if (olderBillIds.length > 0) {
+        const directPaymentsOnSuperseded = await Payment.find({
+          billId: { $in: olderBillIds },
+          paymentType: "BILL_PAYMENT",
+        });
+        totalPaidOnSupersededBills = directPaymentsOnSuperseded.reduce((sum, p) => sum + p.amount, 0);
+      }
+      const totalAmountPaid = totalPaidOnSupersededBills; // ONLY direct bill payments, NOT advance credit!
 
       let computedPaymentStatus: "pending" | "paid" | "partially_paid" = "pending";
-      if (totalAmountPaid >= finalTotal && finalTotal > 0) {
+      if (finalTotal === 0 || totalAmountPaid >= finalTotal) {
         computedPaymentStatus = "paid";
       } else if (totalAmountPaid > 0) {
         computedPaymentStatus = "partially_paid";
-      } else if (finalTotal === 0) {
-        computedPaymentStatus = "paid";
+      } else {
+        computedPaymentStatus = "pending";
       }
 
       // Invoice bill number generation
@@ -255,7 +276,6 @@ export async function POST(request: Request) {
       await bill.save();
 
       // Mark older active bills for this customer in this period as SUPERSEDED by the new bill
-      const olderBillIds = existingActiveBills.map((b) => b._id);
       if (olderBillIds.length > 0) {
         await Bill.updateMany(
           { _id: { $in: olderBillIds } },
@@ -269,14 +289,8 @@ export async function POST(request: Request) {
         );
 
         await Payment.updateMany(
-          { billId: { $in: olderBillIds } },
+          { billId: { $in: olderBillIds }, paymentType: "BILL_PAYMENT" },
           { $set: { billId: bill._id } }
-        );
-
-        await Payment.updateMany(
-          { "allocations.billId": { $in: olderBillIds } },
-          { $set: { "allocations.$[elem].billId": bill._id } },
-          { arrayFilters: [{ "elem.billId": { $in: olderBillIds } }] }
         );
       }
 
@@ -307,9 +321,6 @@ export async function POST(request: Request) {
 
       // Perform FIFO advance credit allocation
       if (advToApply > 0) {
-        customer.advanceBalance = (customer.advanceBalance || 0) - advToApply;
-        await customer.save();
-
         let creditNeeded = advToApply;
         const activeAdvances = await Payment.find({
           customerId,
@@ -330,6 +341,8 @@ export async function POST(request: Request) {
           creditNeeded -= toAllocate;
         }
       }
+
+      await syncCustomerAdvanceBalance(customerId);
 
       // Deliver in-app notification to customer
       await Notification.create({
