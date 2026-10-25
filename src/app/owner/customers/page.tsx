@@ -5,6 +5,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/components/ui/Toast";
 import { Search, UserPlus, Filter, Phone, MapPin, Eye, Edit2, Loader2, ArrowLeft, ArrowRight, User } from "lucide-react";
 import Link from "next/link";
+import useSWR, { mutate as globalMutate } from "swr";
+
+// Shared fetcher
+const fetcher = (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error("Fetch failed"); return r.json(); });
+
+// Cache keys — exported so other pages (e.g. billing) can cross-invalidate
+export const CUSTOMERS_LIST_KEY_PREFIX = "/api/owner/customers";
+// The billing page dropdown uses this exact key — we'll invalidate it on any write
+const BILLING_CUSTOMERS_DROPDOWN_KEY = "/api/owner/customers?limit=100";
 
 interface CustomerData {
   _id: string;
@@ -20,20 +29,24 @@ interface CustomerData {
   pricingType: "standard" | "special";
 }
 
+interface CustomersResponse {
+  customers: CustomerData[];
+  totalPages: number;
+  currentPage: number;
+  totalCustomers: number;
+}
+
 function CustomersListContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { success, error } = useToast();
 
-  const [customers, setCustomers] = useState<CustomerData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [totalCustomers, setTotalCustomers] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState(""); // debounced for SWR key
   const [statusFilter, setStatusFilter] = useState("");
   const [pricingFilter, setPricingFilter] = useState("");
-  
+
   // Modals state
   const [showAddForm, setShowAddForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -56,32 +69,44 @@ function CustomersListContent() {
     }
   }, [searchParams]);
 
-  const fetchCustomers = async (page: number, searchVal: string, statusVal: string, pricingVal: string) => {
-    setLoading(true);
-    try {
-      const url = `/api/owner/customers?page=${page}&limit=8&search=${encodeURIComponent(
-        searchVal
-      )}&status=${statusVal}&pricingType=${pricingVal}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Failed to fetch customer directory");
-      const data = await res.json();
-      setCustomers(data.customers);
-      setTotalPages(data.totalPages);
-      setCurrentPage(data.currentPage);
-      setTotalCustomers(data.totalCustomers);
-    } catch (err: any) {
-      error(err.message || "Failed to load customer list");
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Debounce search — only update SWR key 300ms after typing stops
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchCustomers(1, search, statusFilter, pricingFilter);
-    }, 300); // debounce search
+      setDebouncedSearch(search);
+      setCurrentPage(1); // reset to page 1 on new search
+    }, 300);
     return () => clearTimeout(timer);
-  }, [search, statusFilter, pricingFilter]);
+  }, [search]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, pricingFilter]);
+
+  // ── SWR: cache key encodes all params so each unique query is cached separately ──
+  const swrKey = `${CUSTOMERS_LIST_KEY_PREFIX}?page=${currentPage}&limit=8&search=${encodeURIComponent(debouncedSearch)}&status=${statusFilter}&pricingType=${pricingFilter}`;
+
+  const { data, isLoading: loading, mutate: mutateCustomers } = useSWR<CustomersResponse>(
+    swrKey,
+    fetcher,
+    {
+      revalidateOnFocus: true,
+      dedupingInterval: 10000, // customers list: 10s dedup
+      keepPreviousData: true,  // show previous page while next loads (smoother pagination)
+    }
+  );
+
+  const customers = data?.customers ?? [];
+  const totalPages = data?.totalPages ?? 1;
+  const totalCustomers = data?.totalCustomers ?? 0;
+
+  // Helper: invalidate ALL customer-related cache entries (list + billing dropdown)
+  const invalidateAllCustomerCaches = () => {
+    mutateCustomers(); // current page key
+    globalMutate(BILLING_CUSTOMERS_DROPDOWN_KEY); // billing form dropdown
+    // Also bust any other paginated customer list entries
+    globalMutate((key: string) => typeof key === "string" && key.startsWith(CUSTOMERS_LIST_KEY_PREFIX), undefined, { revalidate: true });
+  };
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -96,15 +121,8 @@ function CustomersListContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name,
-          mobile,
-          address,
-          username,
-          password,
-          notes,
-          joiningDate,
-          dietPreference,
-          pricingType,
+          name, mobile, address, username, password,
+          notes, joiningDate, dietPreference, pricingType,
         }),
       });
 
@@ -112,21 +130,15 @@ function CustomersListContent() {
       if (!res.ok) throw new Error(data.error || "Failed to add customer");
 
       success(`Customer "${name}" created successfully!`, "Registration Success");
-      
+
       // Reset form
-      setName("");
-      setMobile("");
-      setAddress("");
-      setUsername("");
-      setPassword("");
-      setNotes("");
-      setDietPreference("both");
-      setPricingType("standard");
-      setShowAddForm(false);
-      
-      // Refresh directory
-      fetchCustomers(1, search, statusFilter, pricingFilter);
-      
+      setName(""); setMobile(""); setAddress(""); setUsername("");
+      setPassword(""); setNotes(""); setDietPreference("both");
+      setPricingType("standard"); setShowAddForm(false);
+
+      // Invalidate all customer caches
+      invalidateAllCustomerCaches();
+
       // Clean URL params
       if (searchParams.get("action")) {
         router.replace("/owner/customers");
@@ -489,7 +501,7 @@ function CustomersListContent() {
                               });
                               if (res.ok) {
                                 success(`Approved "${c.name}" successfully!`);
-                                fetchCustomers(currentPage, search, statusFilter);
+                                invalidateAllCustomerCaches();
                               } else {
                                 error("Failed to approve customer.");
                               }
@@ -511,7 +523,7 @@ function CustomersListContent() {
                               });
                               if (res.ok) {
                                 success(`Rejected and deleted "${c.name}" successfully.`);
-                                fetchCustomers(currentPage, search, statusFilter);
+                                invalidateAllCustomerCaches();
                               } else {
                                 error("Failed to reject customer.");
                               }
@@ -547,7 +559,7 @@ function CustomersListContent() {
               <div className="flex gap-2">
                 <button
                   disabled={currentPage === 1}
-                  onClick={() => fetchCustomers(currentPage - 1, search, statusFilter)}
+                  onClick={() => setCurrentPage((p) => p - 1)}
                   className="inline-flex items-center gap-1 border border-border px-3 py-1.5 bg-card hover:bg-muted disabled:opacity-40 text-xs font-semibold rounded-lg transition cursor-pointer"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />
@@ -555,7 +567,7 @@ function CustomersListContent() {
                 </button>
                 <button
                   disabled={currentPage === totalPages}
-                  onClick={() => fetchCustomers(currentPage + 1, search, statusFilter)}
+                  onClick={() => setCurrentPage((p) => p + 1)}
                   className="inline-flex items-center gap-1 border border-border px-3 py-1.5 bg-card hover:bg-muted disabled:opacity-40 text-xs font-semibold rounded-lg transition cursor-pointer"
                 >
                   <span>Next</span>
