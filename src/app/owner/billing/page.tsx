@@ -5,10 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/components/ui/Toast";
 import { Receipt, PlusCircle, Search, Filter, Calendar, FileText, Loader2, IndianRupee } from "lucide-react";
 import Link from "next/link";
-import useSWR, { mutate as globalMutate } from "swr";
-
-// Shared fetcher for SWR
-const fetcher = (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error("Fetch failed"); return r.json(); });
+import { formatBillingPeriod } from "@/lib/date-utils";
 
 interface CustomerSummary {
   _id: string;
@@ -73,7 +70,24 @@ function BillingEngineContent() {
   // Search & Filter list states
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [updatingBillId, setUpdatingBillId] = useState<string | null>(null);
+
+  const monthsList = [
+    { value: "01", label: "January" },
+    { value: "02", label: "February" },
+    { value: "03", label: "March" },
+    { value: "04", label: "April" },
+    { value: "05", label: "May" },
+    { value: "06", label: "June" },
+    { value: "07", label: "July" },
+    { value: "08", label: "August" },
+    { value: "09", label: "September" },
+    { value: "10", label: "October" },
+    { value: "11", label: "November" },
+    { value: "12", label: "December" },
+  ];
 
   const handleUpdateBillStatus = async (billId: string, status: "paid" | "pending") => {
     setUpdatingBillId(billId);
@@ -97,8 +111,7 @@ function BillingEngineContent() {
           status === "paid" ? "Invoice marked as paid" : "Invoice marked as pending",
           "Invoice Updated"
         );
-        // Invalidate & re-fetch to get server-authoritative data
-        mutateBills();
+        fetchBills(selectedYear, selectedMonth);
       } else {
         throw new Error();
       }
@@ -111,13 +124,48 @@ function BillingEngineContent() {
     }
   };
 
+  const fetchBills = async (yr = selectedYear, mo = selectedMonth) => {
+    setLoading(true);
+    try {
+      let url = "/api/owner/billing";
+      if (mo && mo !== "all") {
+        url += `?month=${yr}-${mo}`;
+      }
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to load invoice list");
+      const data = await res.json();
+      setBills(data);
+    } catch (err: any) {
+      error(err.message || "Failed to load generated bills");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchCustomers = async () => {
+    try {
+      const res = await fetch("/api/owner/customers?limit=100");
+      if (res.ok) {
+        const data = await res.json();
+        setCustomers(data.customers);
+      }
+    } catch (err) {
+      console.error("Error fetching customer list:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchBills(selectedYear, selectedMonth);
+    fetchCustomers();
+  }, [selectedYear, selectedMonth]);
+
   // Pre-fill customer ID if passed in URL
   useEffect(() => {
     const custParam = searchParams.get("customerId");
     if (custParam) {
       setCustomerId(custParam);
       setShowAddForm(true);
-      
+
       // Auto fill start and end of previous month as sensible defaults
       const d = new Date();
       // Set to first day of last month
@@ -314,7 +362,7 @@ function BillingEngineContent() {
                   <div className="flex justify-between">
                     <span className="text-muted-foreground font-semibold">Selected Period:</span>
                     <span className="font-bold">
-                      {new Date(startDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} – {new Date(endDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                      {formatBillingPeriod(startDate, endDate)}
                     </span>
                   </div>
                   {previewData.alreadyBilledDatesRange && previewData.alreadyBilledDatesRange !== "None" && (
@@ -333,11 +381,10 @@ function BillingEngineContent() {
 
                 {previewData.unbilledConsumption === 0 ? (
                   <div className="space-y-4 py-2">
-                    <div className={`border p-4 rounded-xl text-xs space-y-1 ${
-                      previewData.alreadyBilledResult
+                    <div className={`border p-4 rounded-xl text-xs space-y-1 ${previewData.alreadyBilledResult
                         ? "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400"
                         : "bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-400"
-                    }`}>
+                      }`}>
                       <span className="font-bold block text-sm">
                         {previewData.alreadyBilledResult
                           ? "⚠️ No new meals added since last bill"
@@ -613,6 +660,55 @@ function BillingEngineContent() {
         </div>
       )}
 
+      {/* Month Navigation Tabs Bar (FEAT-007) */}
+      <div className="bg-card border border-border p-4 rounded-2xl shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4.5 w-4.5 text-primary" />
+            <h3 className="font-bold text-sm text-foreground">Billing Period Selector</h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-muted-foreground">Year:</span>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="bg-muted border border-border rounded-lg px-2.5 py-1 text-xs font-bold cursor-pointer focus:outline-none"
+            >
+              {[2025, 2026, 2027].map((yr) => (
+                <option key={yr} value={yr}>{yr}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Scrollable Month Navigation Bar */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setSelectedMonth("all")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${selectedMonth === "all"
+                ? "bg-primary text-white shadow-sm glow-primary"
+                : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+          >
+            All Months
+          </button>
+          {monthsList.map((m) => (
+            <button
+              key={m.value}
+              type="button"
+              onClick={() => setSelectedMonth(m.value)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${selectedMonth === m.value
+                  ? "bg-primary text-white shadow-sm glow-primary"
+                  : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Filters Search Bar */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-grow">
@@ -686,16 +782,15 @@ function BillingEngineContent() {
                       <span>{b.customerId?.name || "Unknown"}</span>
                     </td>
                     <td className="px-6 py-4 text-xs text-muted-foreground">
-                      {new Date(b.billingPeriodStart).toLocaleDateString()} - {new Date(b.billingPeriodEnd).toLocaleDateString()}
+                      {formatBillingPeriod(b.billingPeriodStart, b.billingPeriodEnd)}
                     </td>
                     <td className="px-6 py-4">₹{b.finalTotal}</td>
                     <td className="px-6 py-4 text-rose-600">₹{b.finalTotal - b.amountPaid}</td>
                     <td className="px-6 py-4 capitalize">
-                      <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                        b.paymentStatus === "paid" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400" :
-                        b.paymentStatus === "partially_paid" ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400" :
-                        "bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-400"
-                      }`}>
+                      <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${b.paymentStatus === "paid" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400" :
+                          b.paymentStatus === "partially_paid" ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400" :
+                            "bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-400"
+                        }`}>
                         {b.paymentStatus.replace("_", " ")}
                       </span>
                     </td>
@@ -745,11 +840,10 @@ function BillingEngineContent() {
                       <span>{b.customerId?.name || "Unknown"}</span>
                     </span>
                   </div>
-                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                    b.paymentStatus === "paid" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400" :
-                    b.paymentStatus === "partially_paid" ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400" :
-                    "bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-400"
-                  }`}>
+                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${b.paymentStatus === "paid" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400" :
+                      b.paymentStatus === "partially_paid" ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400" :
+                        "bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-400"
+                    }`}>
                     {b.paymentStatus.replace("_", " ")}
                   </span>
                 </div>
@@ -758,7 +852,7 @@ function BillingEngineContent() {
                   <div>
                     <span className="text-[10px] text-muted-foreground block">Period</span>
                     <span className="font-semibold block truncate">
-                      {new Date(b.billingPeriodStart).toLocaleDateString("en-IN", {month: "short", day: "numeric"})} - {new Date(b.billingPeriodEnd).toLocaleDateString("en-IN", {month: "short", day: "numeric"})}
+                      {formatBillingPeriod(b.billingPeriodStart, b.billingPeriodEnd, "shortDate")}
                     </span>
                   </div>
                   <div>

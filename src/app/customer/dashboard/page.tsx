@@ -16,6 +16,16 @@ interface DashboardData {
   advanceBalance: number;
   recentPayments: any[];
   menuItems: any[];
+  latestBill?: {
+    _id: string;
+    billNumber: string;
+    finalTotal: number;
+    amountPaid: number;
+    paymentStatus: string;
+    billingPeriodStart: string;
+    billingPeriodEnd: string;
+    createdAt: string;
+  } | null;
 }
 
 interface BusinessSettings {
@@ -76,6 +86,35 @@ export default function CustomerDashboard() {
           View your daily meal records, outstanding invoice balances, and scan to pay.
         </p>
       </div>
+
+      {/* FEAT-004: New Bill Available Notification Card */}
+      {data.latestBill && data.latestBill.paymentStatus !== "paid" && (
+        <div className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white p-6 rounded-3xl shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] bg-white/20 uppercase font-black tracking-wider px-2.5 py-0.5 rounded-full">
+                New Bill Available
+              </span>
+              <span className="text-xs text-white/80 font-semibold">
+                {new Date(data.latestBill.billingPeriodStart).toLocaleDateString("en-IN", { month: "long", year: "numeric" })}
+              </span>
+            </div>
+            <h3 className="text-xl font-extrabold tracking-tight">
+              Bill #{data.latestBill.billNumber}
+            </h3>
+            <p className="text-xs text-white/90">
+              Amount Payable: <span className="font-black text-white text-sm">₹{data.latestBill.finalTotal - data.latestBill.amountPaid}</span> • Status: <span className="font-bold capitalize">{data.latestBill.paymentStatus.replace("_", " ")}</span>
+            </p>
+          </div>
+          <Link
+            href={`/customer/bills/${data.latestBill._id}`}
+            className="inline-flex items-center justify-center gap-2 bg-white text-indigo-700 font-extrabold text-xs px-5 py-3 rounded-xl hover:bg-white/90 transition shadow-sm self-start md:self-auto cursor-pointer"
+          >
+            <span>View & Pay Bill</span>
+            <CreditCard className="h-4 w-4" />
+          </Link>
+        </div>
+      )}
 
       {/* Grid Status Metrics */}
       <div className={`grid grid-cols-1 md:grid-cols-3 ${data.advanceBalance > 0 ? "lg:grid-cols-4" : ""} gap-5`}>

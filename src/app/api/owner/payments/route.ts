@@ -85,12 +85,12 @@ export async function POST(request: Request) {
     if (payType === "BILL_PAYMENT" && billId) {
       const bill = await Bill.findById(billId);
       if (bill) {
-        // Calculate total payments against this bill
-        const allPayments = await Payment.find({ billId });
+        // Calculate total direct bill payments against this bill
+        const allPayments = await Payment.find({ billId, paymentType: "BILL_PAYMENT" });
         const totalPaid = allPayments.reduce((sum, p) => sum + p.amount, 0);
 
         bill.amountPaid = totalPaid;
-        if (totalPaid >= bill.finalTotal) {
+        if (totalPaid >= bill.finalTotal || bill.finalTotal === 0) {
           bill.paymentStatus = "paid";
         } else if (totalPaid > 0) {
           bill.paymentStatus = "partially_paid";
@@ -101,9 +101,9 @@ export async function POST(request: Request) {
         await bill.save();
       }
     } else if (payType === "ADVANCE") {
-      // General payment (Advance Payment)
-      customer.advanceBalance = (customer.advanceBalance || 0) + numericAmount;
-      await customer.save();
+      // General payment (Advance Payment) - Sync authoritative available advance balance
+      const { syncCustomerAdvanceBalance } = await import("@/lib/billing-helper");
+      await syncCustomerAdvanceBalance(customerId);
     }
 
     const populated = await Payment.findById(payment._id)

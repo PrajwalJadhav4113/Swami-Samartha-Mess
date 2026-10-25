@@ -36,6 +36,7 @@ export async function GET(request: Request) {
     // 1. Fetch Revenue (Bills generated)
     const bills = await Bill.find({
       createdAt: { $gte: start, $lte: end },
+      status: { $nin: ["SUPERSEDED", "CANCELLED"] },
     }).populate("customerId", "name mobile");
 
     const totalRevenue = bills.reduce((sum, b) => sum + b.finalTotal, 0);
@@ -49,6 +50,7 @@ export async function GET(request: Request) {
 
     // 3. Outstanding Payments List (Any customer with unpaid bills)
     const outstandingBills = await Bill.find({
+      status: { $nin: ["SUPERSEDED", "CANCELLED"] },
       paymentStatus: { $in: ["pending", "partially_paid"] },
     }).populate("customerId", "name mobile");
 

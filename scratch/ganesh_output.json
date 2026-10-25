@@ -1,0 +1,284 @@
+{
+  "customer": {
+    "id": "6ab900e4a7e02b2f61325e28",
+    "name": "Ganesh",
+    "advanceBalance": 0
+  },
+  "payments": [
+    {
+      "id": "6ab901f6a7e02b2f61325f2c",
+      "amount": 550,
+      "paymentType": "ADVANCE",
+      "paymentDate": "2026-09-27T00:00:00.000Z",
+      "billId": null,
+      "remainingAmount": 0,
+      "allocations": [
+        {
+          "billId": "6ac243bacfaabce010b9630d",
+          "amountApplied": 550,
+          "appliedAt": "2026-10-04T12:16:58.802Z",
+          "_id": "6ac243bacfaabce010b96319"
+        }
+      ]
+    },
+    {
+      "id": "6ac21d4983818b29b80575b9",
+      "amount": 100,
+      "paymentType": "BILL_PAYMENT",
+      "paymentDate": "2026-10-04T00:00:00.000Z",
+      "billId": null,
+      "remainingAmount": 0,
+      "allocations": []
+    },
+    {
+      "id": "6ac21e4783818b29b805766e",
+      "amount": 100,
+      "paymentType": "ADVANCE",
+      "paymentDate": "2026-10-04T00:00:00.000Z",
+      "billId": null,
+      "remainingAmount": 0,
+      "allocations": [
+        {
+          "billId": "6ac243bacfaabce010b9630d",
+          "amountApplied": 100,
+          "appliedAt": "2026-10-04T12:16:58.814Z",
+          "_id": "6ac243bacfaabce010b9631a"
+        }
+      ]
+    },
+    {
+      "id": "6ac2317acfaabce010b95d6a",
+      "amount": 50,
+      "paymentType": "ADVANCE",
+      "paymentDate": "2026-10-04T00:00:00.000Z",
+      "billId": null,
+      "remainingAmount": 0,
+      "allocations": [
+        {
+          "billId": "6ac243bacfaabce010b9630d",
+          "amountApplied": 50,
+          "appliedAt": "2026-10-04T12:16:58.831Z",
+          "_id": "6ac243bacfaabce010b9631b"
+        }
+      ]
+    },
+    {
+      "id": "6ac23d7dcfaabce010b960f3",
+      "amount": 50,
+      "paymentType": "ADVANCE",
+      "paymentDate": "2026-10-04T00:00:00.000Z",
+      "billId": null,
+      "remainingAmount": 0,
+      "allocations": [
+        {
+          "billId": "6ac243bacfaabce010b9630d",
+          "amountApplied": 50,
+          "appliedAt": "2026-10-04T12:16:58.865Z",
+          "_id": "6ac243bacfaabce010b9631c"
+        }
+      ]
+    },
+    {
+      "id": "6ac2432bcfaabce010b96176",
+      "amount": 20,
+      "paymentType": "ADVANCE",
+      "paymentDate": "2026-10-04T00:00:00.000Z",
+      "billId": null,
+      "remainingAmount": 0,
+      "allocations": [
+        {
+          "billId": "6ac243bacfaabce010b9630d",
+          "amountApplied": 20,
+          "appliedAt": "2026-10-04T12:16:58.897Z",
+          "_id": "6ac243bacfaabce010b9631d"
+        }
+      ]
+    },
+    {
+      "id": "6ac24395cfaabce010b96296",
+      "amount": 20,
+      "paymentType": "ADVANCE",
+      "paymentDate": "2026-10-04T00:00:00.000Z",
+      "billId": null,
+      "remainingAmount": 0,
+      "allocations": [
+        {
+          "billId": "6ac243bacfaabce010b9630d",
+          "amountApplied": 20,
+          "appliedAt": "2026-10-04T12:16:58.913Z",
+          "_id": "6ac243bacfaabce010b9631e"
+        }
+      ]
+    }
+  ],
+  "bills": [
+    {
+      "id": "6ab90196a7e02b2f61325e6b",
+      "billNumber": "SSM-202609-0036",
+      "status": "SUPERSEDED",
+      "supersededBy": "6ab901cea7e02b2f61325ee5",
+      "billingPeriodStart": "2026-09-01T00:00:00.000Z",
+      "billingPeriodEnd": "2026-09-30T23:59:59.999Z",
+      "finalTotal": 470,
+      "advancePayment": 0,
+      "amountPaid": 0,
+      "paymentStatus": "pending"
+    },
+    {
+      "id": "6ab901cea7e02b2f61325ee5",
+      "billNumber": "SSM-202609-0037",
+      "status": "SUPERSEDED",
+      "supersededBy": "6ab9021ba7e02b2f61325f89",
+      "billingPeriodStart": "2026-09-01T00:00:00.000Z",
+      "billingPeriodEnd": "2026-09-30T23:59:59.999Z",
+      "finalTotal": 610,
+      "advancePayment": 0,
+      "amountPaid": 0,
+      "paymentStatus": "pending"
+    },
+    {
+      "id": "6ab9021ba7e02b2f61325f89",
+      "billNumber": "SSM-202609-0038",
+      "status": "SUPERSEDED",
+      "supersededBy": "6ab902aca7e02b2f61326038",
+      "billingPeriodStart": "2026-09-01T00:00:00.000Z",
+      "billingPeriodEnd": "2026-09-30T23:59:59.999Z",
+      "finalTotal": 60,
+      "advancePayment": 550,
+      "amountPaid": 0,
+      "paymentStatus": "pending"
+    },
+    {
+      "id": "6ab902aca7e02b2f61326038",
+      "billNumber": "SSM-202609-0039",
+      "status": "SUPERSEDED",
+      "supersededBy": "6ac21e8783818b29b80576e1",
+      "billingPeriodStart": "2026-09-01T00:00:00.000Z",
+      "billingPeriodEnd": "2026-09-30T23:59:59.999Z",
+      "finalTotal": 610,
+      "advancePayment": 0,
+      "amountPaid": 0,
+      "paymentStatus": "pending"
+    },
+    {
+      "id": "6ac21dd983818b29b8057618",
+      "billNumber": "SSM-202610-0040",
+      "status": "SUPERSEDED",
+      "supersededBy": "6ac21e8783818b29b80576e1",
+      "billingPeriodStart": "2026-10-01T00:00:00.000Z",
+      "billingPeriodEnd": "2026-10-31T23:59:59.999Z",
+      "finalTotal": 510,
+      "advancePayment": 0,
+      "amountPaid": 0,
+      "paymentStatus": "pending"
+    },
+    {
+      "id": "6ac21e8783818b29b80576e1",
+      "billNumber": "SSM-202610-0041",
+      "status": "SUPERSEDED",
+      "supersededBy": "6ac230f6cfaabce010b95c0e",
+      "billingPeriodStart": "2026-09-01T00:00:00.000Z",
+      "billingPeriodEnd": "2026-10-30T23:59:59.999Z",
+      "finalTotal": 960,
+      "advancePayment": 100,
+      "amountPaid": 0,
+      "paymentStatus": "pending"
+    },
+    {
+      "id": "6ac230f6cfaabce010b95c0e",
+      "billNumber": "SSM-202610-0042",
+      "status": "SUPERSEDED",
+      "supersededBy": "6ac23135cfaabce010b95ccd",
+      "billingPeriodStart": "2026-10-01T00:00:00.000Z",
+      "billingPeriodEnd": "2026-10-29T23:59:59.999Z",
+      "finalTotal": 450,
+      "advancePayment": 0,
+      "amountPaid": 0,
+      "paymentStatus": "pending"
+    },
+    {
+      "id": "6ac23135cfaabce010b95ccd",
+      "billNumber": "SSM-202610-0043",
+      "status": "SUPERSEDED",
+      "supersededBy": "6ac231a3cfaabce010b95dcf",
+      "billingPeriodStart": "2026-10-01T00:00:00.000Z",
+      "billingPeriodEnd": "2026-10-29T23:59:59.999Z",
+      "finalTotal": 450,
+      "advancePayment": 0,
+      "amountPaid": 0,
+      "paymentStatus": "pending"
+    },
+    {
+      "id": "6ac231a3cfaabce010b95dcf",
+      "billNumber": "SSM-202610-0044",
+      "status": "SUPERSEDED",
+      "supersededBy": "6ac23284cfaabce010b95eb4",
+      "billingPeriodStart": "2026-10-01T00:00:00.000Z",
+      "billingPeriodEnd": "2026-10-29T23:59:59.999Z",
+      "finalTotal": 570,
+      "advancePayment": 50,
+      "amountPaid": 0,
+      "paymentStatus": "pending"
+    },
+    {
+      "id": "6ac23284cfaabce010b95eb4",
+      "billNumber": "SSM-202610-0045",
+      "status": "SUPERSEDED",
+      "supersededBy": "6ac23996cfaabce010b95f8d",
+      "billingPeriodStart": "2026-10-01T00:00:00.000Z",
+      "billingPeriodEnd": "2026-10-29T23:59:59.999Z",
+      "finalTotal": 690,
+      "advancePayment": 0,
+      "amountPaid": 0,
+      "paymentStatus": "pending"
+    },
+    {
+      "id": "6ac23996cfaabce010b95f8d",
+      "billNumber": "SSM-202610-0046",
+      "status": "SUPERSEDED",
+      "supersededBy": "6ac23d5fcfaabce010b96059",
+      "billingPeriodStart": "2026-10-01T00:00:00.000Z",
+      "billingPeriodEnd": "2026-10-29T23:59:59.999Z",
+      "finalTotal": 90,
+      "advancePayment": 700,
+      "amountPaid": 0,
+      "paymentStatus": "pending"
+    },
+    {
+      "id": "6ac23d5fcfaabce010b96059",
+      "billNumber": "SSM-202610-0047",
+      "status": "SUPERSEDED",
+      "supersededBy": "6ac24369cfaabce010b961e7",
+      "billingPeriodStart": "2026-10-01T00:00:00.000Z",
+      "billingPeriodEnd": "2026-10-29T23:59:59.999Z",
+      "finalTotal": 40,
+      "advancePayment": 750,
+      "amountPaid": 0,
+      "paymentStatus": "pending"
+    },
+    {
+      "id": "6ac24369cfaabce010b961e7",
+      "billNumber": "SSM-202610-0048",
+      "status": "SUPERSEDED",
+      "supersededBy": "6ac243bacfaabce010b9630d",
+      "billingPeriodStart": "2026-10-01T00:00:00.000Z",
+      "billingPeriodEnd": "2026-10-29T23:59:59.999Z",
+      "finalTotal": 20,
+      "advancePayment": 770,
+      "amountPaid": 0,
+      "paymentStatus": "pending"
+    },
+    {
+      "id": "6ac243bacfaabce010b9630d",
+      "billNumber": "SSM-202610-0049",
+      "status": "ACTIVE",
+      "supersededBy": null,
+      "billingPeriodStart": "2026-10-01T00:00:00.000Z",
+      "billingPeriodEnd": "2026-10-29T23:59:59.999Z",
+      "finalTotal": 0,
+      "advancePayment": 790,
+      "amountPaid": 0,
+      "paymentStatus": "paid"
+    }
+  ]
+}

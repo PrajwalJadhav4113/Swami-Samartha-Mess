@@ -72,7 +72,7 @@ export async function GET() {
     });
 
     // 2. Financial Metrics
-    const allBills = await Bill.find();
+    const allBills = await Bill.find({ status: { $nin: ["SUPERSEDED", "CANCELLED"] } });
     let outstandingAmount = 0;
     let monthlyRevenue = 0;
     let weeklyRevenue = 0;
@@ -177,13 +177,60 @@ export async function GET() {
       });
     }
 
+    // Advance Credit metrics (FEAT-005)
+    let totalAvailableAdvance = 0;
+    const customersWithAdvance: { _id: string; name: string; mobile: string; advanceBalance: number }[] = [];
+    activeCustomersList.forEach((c) => {
+      if (c.advanceBalance && c.advanceBalance > 0) {
+        totalAvailableAdvance += c.advanceBalance;
+        customersWithAdvance.push({
+          _id: c._id.toString(),
+          name: c.name,
+          mobile: c.mobile,
+          advanceBalance: c.advanceBalance,
+        });
+      }
+    });
+
+    // Pending Bills & Receivables metrics (FEAT-006)
+    const pendingBillsList = await Bill.find({
+      status: { $nin: ["SUPERSEDED", "CANCELLED"] },
+      paymentStatus: { $in: ["pending", "partially_paid"] },
+    })
+      .populate("customerId", "name mobile")
+      .sort({ createdAt: -1 });
+
+    let totalOutstandingAmount = 0;
+    const pendingBills = pendingBillsList.map((b) => {
+      const due = Math.max(0, b.finalTotal - b.amountPaid);
+      totalOutstandingAmount += due;
+      
+      const pStart = new Date(b.billingPeriodStart).toLocaleDateString("en-IN", { month: "short", day: "numeric" });
+      const pEnd = new Date(b.billingPeriodEnd).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
+
+      return {
+        _id: b._id,
+        billNumber: b.billNumber,
+        customerName: (b.customerId as any)?.name || "Unknown",
+        customerMobile: (b.customerId as any)?.mobile || "",
+        billingPeriod: `${pStart} - ${pEnd}`,
+        finalTotal: b.finalTotal,
+        amountPaid: b.amountPaid,
+        amountDue: due,
+        paymentStatus: b.paymentStatus,
+        createdAt: b.createdAt,
+      };
+    });
+
     return NextResponse.json({
       stats: {
         totalCustomers,
         activeCustomers,
         todayMeals,
         todayHolidays,
-        outstandingAmount,
+        outstandingAmount: totalOutstandingAmount,
+        totalAvailableAdvance,
+        customersWithAdvance,
         monthlyRevenue,
         weeklyRevenue,
         pendingPaymentsCount: paymentStatusCounts.pending + paymentStatusCounts.partially_paid,
@@ -192,6 +239,7 @@ export async function GET() {
         remainingMorningCustomers,
         remainingNightCustomers,
       },
+      pendingBills,
       charts: {
         revenueTrend,
         mealsServedTrend,

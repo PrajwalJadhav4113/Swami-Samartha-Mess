@@ -37,12 +37,27 @@ import {
 } from "recharts";
 import { useToast } from "@/components/ui/Toast";
 
+interface PendingBillItem {
+  _id: string;
+  billNumber: string;
+  customerName: string;
+  customerMobile: string;
+  billingPeriod: string;
+  finalTotal: number;
+  amountPaid: number;
+  amountDue: number;
+  paymentStatus: "pending" | "partially_paid" | "paid";
+  createdAt: string;
+}
+
 interface Stats {
   totalCustomers: number;
   activeCustomers: number;
   todayMeals: number;
   todayHolidays: number;
   outstandingAmount: number;
+  totalAvailableAdvance?: number;
+  customersWithAdvance?: { _id: string; name: string; mobile: string; advanceBalance: number }[];
   monthlyRevenue: number;
   weeklyRevenue: number;
   pendingPaymentsCount: number;
@@ -65,10 +80,12 @@ export default function OwnerDashboard() {
   const { error } = useToast();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [pendingBills, setPendingBills] = useState<PendingBillItem[]>([]);
   const [charts, setCharts] = useState<ChartsData | null>(null);
   const [mounted, setMounted] = useState(false);
   const [showRemainingLunchList, setShowRemainingLunchList] = useState(false);
   const [showRemainingDinnerList, setShowRemainingDinnerList] = useState(false);
+  const [showAdvanceCustomersList, setShowAdvanceCustomersList] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -80,6 +97,7 @@ export default function OwnerDashboard() {
         }
         const data = await res.json();
         setStats(data.stats);
+        setPendingBills(data.pendingBills || []);
         setCharts(data.charts);
       } catch (err: any) {
         error(err.message || "Could not retrieve dashboard statistics");
@@ -214,6 +232,38 @@ export default function OwnerDashboard() {
           )}
         </div>
 
+        <div className="bg-card border border-border p-5 rounded-2xl shadow-sm hover-lift flex flex-col justify-between">
+          <div className="flex items-center gap-4">
+            <div className="h-12 w-12 rounded-xl bg-indigo-100 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-600 flex-shrink-0">
+              <PiggyBank className="h-5 w-5" />
+            </div>
+            <div className="flex-grow">
+              <span className="text-xs text-muted-foreground font-semibold block">Advance Payments</span>
+              <div className="flex items-baseline gap-2 mt-0.5">
+                <span className="text-2xl font-bold text-indigo-600">{formatINR(stats?.totalAvailableAdvance || 0)}</span>
+                {stats?.customersWithAdvance && stats.customersWithAdvance.length > 0 && (
+                  <button
+                    onClick={() => setShowAdvanceCustomersList(!showAdvanceCustomersList)}
+                    className="text-[10px] text-primary hover:underline font-bold uppercase cursor-pointer ml-1"
+                  >
+                    {showAdvanceCustomersList ? "Hide" : "View"}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          {showAdvanceCustomersList && stats?.customersWithAdvance && stats.customersWithAdvance.length > 0 && (
+            <div className="mt-3 border-t border-border pt-2 max-h-32 overflow-y-auto space-y-1">
+              {stats.customersWithAdvance.map((c) => (
+                <div key={c._id} className="text-[10px] flex justify-between items-center bg-muted/30 px-2 py-1 rounded">
+                  <span className="font-semibold truncate max-w-[90px]">{c.name}</span>
+                  <span className="font-bold text-indigo-600">₹{c.advanceBalance}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="bg-card border border-border p-5 rounded-2xl shadow-sm hover-lift flex items-center gap-4">
           <div className="h-12 w-12 rounded-xl bg-amber-100 dark:bg-amber-950/50 flex items-center justify-center text-amber-600 flex-shrink-0">
             <AlertCircle className="h-5 w-5" />
@@ -240,6 +290,72 @@ export default function OwnerDashboard() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* FEAT-006: Pending Bills & Receivables Widget */}
+      <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-4">
+          <div>
+            <h3 className="font-bold text-base flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-amber-500" />
+              <span>📋 Pending Bills & Receivables</span>
+            </h3>
+            <p className="text-xs text-muted-foreground">Unpaid and partially paid invoices</p>
+          </div>
+          <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-900/40 px-3.5 py-1.5 rounded-xl flex items-center gap-2 self-start sm:self-auto">
+            <span className="text-[11px] font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider">Total Outstanding:</span>
+            <span className="text-sm font-black text-rose-600 dark:text-rose-400">{formatINR(stats?.outstandingAmount || 0)}</span>
+          </div>
+        </div>
+
+        {pendingBills.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-6 text-center">No pending or partially paid invoices found. All clear!</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs whitespace-nowrap">
+              <thead>
+                <tr className="border-b border-border bg-muted/40 text-muted-foreground font-bold uppercase text-[10px]">
+                  <th className="px-4 py-3">Customer</th>
+                  <th className="px-4 py-3">Bill Number</th>
+                  <th className="px-4 py-3">Billing Period</th>
+                  <th className="px-4 py-3 text-right">Total Amount</th>
+                  <th className="px-4 py-3 text-right">Paid Amount</th>
+                  <th className="px-4 py-3 text-right">Amount Due</th>
+                  <th className="px-4 py-3 text-center">Status</th>
+                  <th className="px-4 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border font-medium">
+                {pendingBills.slice(0, 10).map((b) => (
+                  <tr key={b._id} className="hover:bg-muted/10 transition">
+                    <td className="px-4 py-3 font-bold text-foreground">{b.customerName}</td>
+                    <td className="px-4 py-3 font-semibold">{b.billNumber}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{b.billingPeriod}</td>
+                    <td className="px-4 py-3 text-right">₹{b.finalTotal}</td>
+                    <td className="px-4 py-3 text-right text-emerald-600 font-bold">₹{b.amountPaid}</td>
+                    <td className="px-4 py-3 text-right text-rose-600 font-extrabold">₹{b.amountDue}</td>
+                    <td className="px-4 py-3 text-center capitalize">
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                        b.paymentStatus === "partially_paid" ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400" :
+                        "bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-400"
+                      }`}>
+                        {b.paymentStatus.replace("_", " ")}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Link
+                        href={`/owner/billing/${b._id}`}
+                        className="text-[10px] bg-primary/10 text-primary hover:bg-primary/20 font-bold px-2.5 py-1 rounded-lg transition"
+                      >
+                        View Bill
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Quick Action Cards Grid */}

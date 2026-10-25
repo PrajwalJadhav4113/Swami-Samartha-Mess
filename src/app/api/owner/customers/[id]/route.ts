@@ -30,13 +30,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const bills = await Bill.find({ customerId: id });
-    const totalBills = bills.reduce((sum, b) => sum + b.finalTotal, 0);
+    const totalBills = bills
+      .filter((b) => b.status !== "SUPERSEDED" && b.status !== "CANCELLED")
+      .reduce((sum, b) => sum + b.finalTotal, 0);
 
     const payments = await Payment.find({ customerId: id });
     const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
 
-    const activeBills = bills.filter((b) => !b.isCarriedForward);
-    const outstanding = activeBills.reduce((sum, b) => sum + (b.finalTotal - b.amountPaid), 0);
+    const activeBills = bills.filter(
+      (b) => !b.isCarriedForward && b.status !== "SUPERSEDED" && b.status !== "CANCELLED"
+    );
+    const outstanding = activeBills.reduce((sum, b) => sum + Math.max(0, b.finalTotal - b.amountPaid), 0);
 
     const customerObj = customer.toObject();
 
