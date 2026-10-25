@@ -1,8 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useToast } from "@/components/ui/Toast";
 import { PlusCircle, Edit2, Trash2, Check, X, Loader2, Menu as MenuIcon, CircleDollarSign } from "lucide-react";
+import useSWR from "swr";
+
+const fetcher = (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error("Fetch failed"); return r.json(); });
+export const MENU_KEY = "/api/owner/menu";
 
 interface MenuItem {
   _id: string;
@@ -15,8 +19,6 @@ interface MenuItem {
 
 export default function MenuMaster() {
   const { success, error } = useToast();
-  const [items, setItems] = useState<MenuItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [activePricingTab, setActivePricingTab] = useState<"normal" | "special">("normal");
 
   // Form states
@@ -36,41 +38,20 @@ export default function MenuMaster() {
   const [editIsActive, setEditIsActive] = useState(true);
   const [updating, setUpdating] = useState(false);
 
-  const fetchMenuItems = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/owner/menu");
-      if (!res.ok) throw new Error("Failed to fetch menu list");
-      const data = await res.json();
-      setItems(data);
-    } catch (err: any) {
-      error(err.message || "Failed to load menu items");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchMenuItems();
-  }, []);
+  // ── SWR ──────────────────────────────────────────────────────────────────────
+  const { data: items = [], isLoading: loading, mutate: mutateMenu } =
+    useSWR<MenuItem[]>(MENU_KEY, fetcher, {
+      revalidateOnFocus: true,
+      dedupingInterval: 15000, // menu items rarely change — 15s dedup
+    });
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !price) {
-      error("Name and Price are required fields");
-      return;
-    }
+    if (!name || !price) { error("Name and Price are required fields"); return; }
     const numPrice = parseFloat(price);
-    if (isNaN(numPrice) || numPrice < 0) {
-      error("Price must be a valid positive number");
-      return;
-    }
-    // If special price is empty, default to 0 (indicating no override)
+    if (isNaN(numPrice) || numPrice < 0) { error("Price must be a valid positive number"); return; }
     const numSpecialPrice = specialPrice ? parseFloat(specialPrice) : 0;
-    if (isNaN(numSpecialPrice) || numSpecialPrice < 0) {
-      error("Special Price must be a valid positive number");
-      return;
-    }
+    if (isNaN(numSpecialPrice) || numSpecialPrice < 0) { error("Special Price must be a valid positive number"); return; }
 
     setSubmitting(true);
     try {
@@ -79,16 +60,12 @@ export default function MenuMaster() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, category, price: numPrice, specialPrice: numSpecialPrice }),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to add menu item");
 
       success(`Menu item "${name}" created!`);
-      setName("");
-      setPrice("");
-      setSpecialPrice("");
-      setShowAddForm(false);
-      fetchMenuItems();
+      setName(""); setPrice(""); setSpecialPrice(""); setShowAddForm(false);
+      mutateMenu(); // invalidate & re-fetch
     } catch (err: any) {
       error(err.message || "Error adding menu item");
     } finally {
@@ -106,43 +83,37 @@ export default function MenuMaster() {
   };
 
   const handleSaveEdit = async (id: string) => {
-    if (!editName || !editPrice) {
-      error("Name and Price cannot be blank");
-      return;
-    }
+    if (!editName || !editPrice) { error("Name and Price cannot be blank"); return; }
     const numPrice = parseFloat(editPrice);
-    if (isNaN(numPrice) || numPrice < 0) {
-      error("Price must be a valid positive number");
-      return;
-    }
+    if (isNaN(numPrice) || numPrice < 0) { error("Price must be a valid positive number"); return; }
     const numSpecialPrice = editSpecialPrice ? parseFloat(editSpecialPrice) : 0;
-    if (isNaN(numSpecialPrice) || numSpecialPrice < 0) {
-      error("Special Price must be a valid positive number");
-      return;
-    }
+    if (isNaN(numSpecialPrice) || numSpecialPrice < 0) { error("Special Price must be a valid positive number"); return; }
+
+    // Optimistic update
+    mutateMenu(
+      (prev) => prev?.map((item) =>
+        item._id === id
+          ? { ...item, name: editName, category: editCategory, price: numPrice, specialPrice: numSpecialPrice, isActive: editIsActive }
+          : item
+      ),
+      false
+    );
+    setEditingId(null);
 
     setUpdating(true);
     try {
       const res = await fetch(`/api/owner/menu/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: editName,
-          category: editCategory,
-          price: numPrice,
-          specialPrice: numSpecialPrice,
-          isActive: editIsActive,
-        }),
+        body: JSON.stringify({ name: editName, category: editCategory, price: numPrice, specialPrice: numSpecialPrice, isActive: editIsActive }),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to update item");
-
       success(`Menu item "${editName}" updated successfully`);
-      setEditingId(null);
-      fetchMenuItems();
+      mutateMenu(); // confirm with server data
     } catch (err: any) {
       error(err.message || "Error saving menu item modifications");
+      mutateMenu(); // roll back optimistic update
     } finally {
       setUpdating(false);
     }
@@ -150,6 +121,8 @@ export default function MenuMaster() {
 
   const handleDeleteItem = async (id: string, itemName: string) => {
     if (!confirm(`Are you sure you want to delete "${itemName}"? This will impact pricing configs for future records.`)) return;
+    // Optimistic remove
+    mutateMenu((prev) => prev?.filter((item) => item._id !== id), false);
     try {
       const res = await fetch(`/api/owner/menu/${id}`, { method: "DELETE" });
       if (!res.ok) {
@@ -157,27 +130,35 @@ export default function MenuMaster() {
         throw new Error(data.error || "Failed to delete item");
       }
       success(`Menu item "${itemName}" deleted successfully`);
-      fetchMenuItems();
+      mutateMenu(); // confirm with server
     } catch (err: any) {
       error(err.message || "Error deleting item");
+      mutateMenu(); // roll back
     }
   };
 
   const handleToggleStatus = async (item: MenuItem) => {
+    const newStatus = !item.isActive;
+    // Optimistic flip
+    mutateMenu(
+      (prev) => prev?.map((i) => i._id === item._id ? { ...i, isActive: newStatus } : i),
+      false
+    );
     try {
       const res = await fetch(`/api/owner/menu/${item._id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive: !item.isActive }),
+        body: JSON.stringify({ isActive: newStatus }),
       });
       if (res.ok) {
-        success(`"${item.name}" is now ${!item.isActive ? "Active" : "Inactive"}`);
-        fetchMenuItems();
+        success(`"${item.name}" is now ${newStatus ? "Active" : "Inactive"}`);
+        mutateMenu(); // confirm with server
       } else {
         throw new Error();
       }
     } catch (err) {
       error("Failed to toggle status");
+      mutateMenu(); // roll back
     }
   };
 

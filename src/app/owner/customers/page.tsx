@@ -155,7 +155,14 @@ function CustomersListContent() {
       {/* Action Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Customer Database</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-bold tracking-tight">Customer Database</h2>
+            {totalCustomers > 0 && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20">
+                {totalCustomers} {debouncedSearch || statusFilter || pricingFilter ? "found" : "total"}
+              </span>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground">
             Manage your tiffin customers, details, and view their individual portfolios.
           </p>
