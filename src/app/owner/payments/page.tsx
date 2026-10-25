@@ -17,6 +17,16 @@ import {
   AlertTriangle,
   History,
 } from "lucide-react";
+import useSWR, { mutate as globalMutate } from "swr";
+
+const fetcher = async <T,>(url: string): Promise<T> => {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error || "Failed to load payment data");
+  }
+  return response.json();
+};
 
 interface CustomerSummary {
   _id: string;
@@ -83,14 +93,58 @@ function PaymentsLedgerContent() {
   const searchParams = useSearchParams();
   const { success, error } = useToast();
 
-  const [payments, setPayments] = useState<PaymentItem[]>([]);
-  const [customers, setCustomers] = useState<CustomerSummary[]>([]);
-  const [unpaidBills, setUnpaidBills] = useState<BillSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: paymentsData, error: paymentsError, isLoading: loading } = useSWR<PaymentItem[]>(
+    "/api/owner/payments",
+    fetcher,
+    { revalidateOnFocus: true, dedupingInterval: 5000 }
+  );
+  const { data: customersData } = useSWR<{ customers: CustomerSummary[] }>(
+    "/api/owner/customers?limit=100",
+    fetcher,
+    { revalidateOnFocus: true, dedupingInterval: 30000 }
+  );
 
   // Add Payment form states
   const [paymentType, setPaymentType] = useState<"BILL_PAYMENT" | "ADVANCE">("BILL_PAYMENT");
   const [customerId, setCustomerId] = useState("");
+  const pendingBillsKey = customerId
+    ? `/api/owner/billing?customerId=${encodeURIComponent(customerId)}&status=pending`
+    : null;
+  const partiallyPaidBillsKey = customerId
+    ? `/api/owner/billing?customerId=${encodeURIComponent(customerId)}&status=partially_paid`
+    : null;
+  const { data: pendingBillsData } = useSWR<BillSummary[]>(pendingBillsKey, fetcher, {
+    revalidateOnFocus: true,
+    dedupingInterval: 5000,
+  });
+  const { data: partiallyPaidBillsData } = useSWR<BillSummary[]>(partiallyPaidBillsKey, fetcher, {
+    revalidateOnFocus: true,
+    dedupingInterval: 5000,
+  });
+  const payments = paymentsData ?? [];
+  const customers = customersData?.customers ?? [];
+  const unpaidBills = [...(pendingBillsData ?? []), ...(partiallyPaidBillsData ?? [])];
+
+  const revalidatePaymentCaches = async (affectedCustomerId: string) => {
+    await Promise.allSettled([
+      globalMutate(
+        (key) => typeof key === "string" && (key === "/api/owner/payments" || key.startsWith("/api/owner/payments?")),
+        undefined,
+        { revalidate: true }
+      ),
+      globalMutate(
+        (key) => typeof key === "string" && (key === "/api/owner/billing" || key.startsWith("/api/owner/billing?")),
+        undefined,
+        { revalidate: true }
+      ),
+      globalMutate(
+        (key) => typeof key === "string" && key.startsWith("/api/owner/customers?"),
+        undefined,
+        { revalidate: true }
+      ),
+      globalMutate(`/api/owner/customers/${affectedCustomerId}`),
+    ]);
+  };
   const [billId, setBillId] = useState("");
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
@@ -118,67 +172,21 @@ function PaymentsLedgerContent() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const fetchPayments = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/owner/payments");
-      if (!res.ok) throw new Error("Failed to fetch payments");
-      const data = await res.json();
-      setPayments(data);
-    } catch (err: any) {
-      error(err.message || "Failed to load payment logs");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchCustomers = async () => {
-    try {
-      const res = await fetch("/api/owner/customers?limit=100");
-      if (res.ok) {
-        const data = await res.json();
-        setCustomers(data.customers);
-      }
-    } catch (err) {
-      console.error("Error fetching customers:", err);
-    }
-  };
-
-  const fetchUnpaidBills = async (cId: string) => {
-    if (!cId) {
-      setUnpaidBills([]);
-      return;
-    }
-    try {
-      const res = await fetch(`/api/owner/billing?customerId=${cId}&status=pending`);
-      if (res.ok) {
-        const data1 = await res.json();
-        const res2 = await fetch(`/api/owner/billing?customerId=${cId}&status=partially_paid`);
-        const data2 = res2.ok ? await res2.json() : [];
-        setUnpaidBills([...data1, ...data2]);
-      }
-    } catch (err) {
-      console.error("Error loading unpaid bills:", err);
-    }
-  };
-
   useEffect(() => {
-    fetchPayments();
-    fetchCustomers();
-  }, []);
+    if (paymentsError) error(paymentsError.message || "Failed to load payment logs");
+  }, [paymentsError, error]);
 
   useEffect(() => {
     const custParam = searchParams.get("customerId");
     if (custParam) {
       setCustomerId(custParam);
       setShowAddForm(true);
-      fetchUnpaidBills(custParam);
     }
   }, [searchParams]);
 
   useEffect(() => {
-    fetchUnpaidBills(customerId);
     setBillId("");
+    setAmount("");
   }, [customerId]);
 
   const handleBillChange = (selectedBillId: string) => {
@@ -208,6 +216,7 @@ function PaymentsLedgerContent() {
     }
 
     setSubmitting(true);
+    const affectedCustomerId = customerId;
     try {
       const res = await fetch("/api/owner/payments", {
         method: "POST",
@@ -235,7 +244,7 @@ function PaymentsLedgerContent() {
       setTransactionReference("");
       setNotes("");
       setShowAddForm(false);
-      fetchPayments();
+      await revalidatePaymentCaches(affectedCustomerId);
       if (searchParams.get("customerId")) router.replace("/owner/payments");
     } catch (err: any) {
       error(err.message || "Error logging payment");
@@ -284,7 +293,7 @@ function PaymentsLedgerContent() {
       success("Advance payment updated successfully!", "Payment Updated");
       setShowConfirm(false);
       setEditingPayment(null);
-      fetchPayments();
+      await revalidatePaymentCaches(editingPayment.customerId._id);
     } catch (err: any) {
       error(err.message || "Error updating payment");
       setShowConfirm(false);

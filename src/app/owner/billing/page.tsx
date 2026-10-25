@@ -6,6 +6,16 @@ import { useToast } from "@/components/ui/Toast";
 import { Receipt, PlusCircle, Search, Filter, Calendar, FileText, Loader2, IndianRupee } from "lucide-react";
 import Link from "next/link";
 import { formatBillingPeriod } from "@/lib/date-utils";
+import useSWR, { mutate as globalMutate } from "swr";
+
+const fetcher = async <T,>(url: string): Promise<T> => {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error || "Failed to load billing data");
+  }
+  return response.json();
+};
 
 interface CustomerSummary {
   _id: string;
@@ -20,6 +30,7 @@ interface BillItem {
     _id: string;
     name: string;
     mobile: string;
+    pricingType?: "normal" | "special";
   };
   billingPeriodStart: string;
   billingPeriodEnd: string;
@@ -37,22 +48,6 @@ function BillingEngineContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { success, error } = useToast();
-
-  // ── SWR data fetching ──────────────────────────────────────────────────────
-  const { data: billsData, isLoading: billsLoading, mutate: mutateBills } =
-    useSWR<BillItem[]>(BILLS_KEY, fetcher, {
-      revalidateOnFocus: true,
-      dedupingInterval: 5000,
-    });
-
-  const { data: customersData, mutate: mutateCustomers } =
-    useSWR<{ customers: CustomerSummary[] }>(CUSTOMERS_KEY, fetcher, {
-      revalidateOnFocus: false,
-      dedupingInterval: 30000, // customers change infrequently
-    });
-
-  const bills = billsData ?? [];
-  const customers = customersData?.customers ?? [];
 
   // Form states
   const [customerId, setCustomerId] = useState("");
@@ -73,6 +68,39 @@ function BillingEngineContent() {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [updatingBillId, setUpdatingBillId] = useState<string | null>(null);
+
+  const billsKey =
+    selectedMonth === "all" ? BILLS_KEY : `${BILLS_KEY}?month=${selectedYear}-${selectedMonth}`;
+  const {
+    data: billsData,
+    error: billsError,
+    isLoading: billsLoading,
+    mutate: mutateBills,
+  } = useSWR<BillItem[]>(billsKey, fetcher, {
+    revalidateOnFocus: true,
+    dedupingInterval: 5000,
+  });
+  const { data: customersData } = useSWR<{ customers: CustomerSummary[] }>(CUSTOMERS_KEY, fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 30000,
+  });
+
+  const bills = billsData ?? [];
+  const customers = customersData?.customers ?? [];
+
+  useEffect(() => {
+    if (billsError) error(billsError.message || "Failed to load generated bills");
+  }, [billsError, error]);
+
+  const revalidateBillingCaches = async (includeCustomers = false) => {
+    const revalidations = [
+      globalMutate(
+        (key) => typeof key === "string" && (key === BILLS_KEY || key.startsWith(`${BILLS_KEY}?`))
+      ),
+    ];
+    if (includeCustomers) revalidations.push(globalMutate(CUSTOMERS_KEY));
+    await Promise.all(revalidations);
+  };
 
   const monthsList = [
     { value: "01", label: "January" },
@@ -97,7 +125,7 @@ function BillingEngineContent() {
         prev?.map((b) =>
           b._id === billId ? { ...b, paymentStatus: status, amountPaid: status === "paid" ? b.finalTotal : 0 } : b
         ),
-      false // don't revalidate yet
+      { revalidate: false }
     );
     try {
       const res = await fetch(`/api/owner/billing/${billId}`, {
@@ -111,53 +139,18 @@ function BillingEngineContent() {
           status === "paid" ? "Invoice marked as paid" : "Invoice marked as pending",
           "Invoice Updated"
         );
-        fetchBills(selectedYear, selectedMonth);
+        await revalidateBillingCaches();
       } else {
         throw new Error();
       }
     } catch (err) {
       error("Failed to update payment status");
       // Roll back optimistic update on failure
-      mutateBills();
+      await revalidateBillingCaches();
     } finally {
       setUpdatingBillId(null);
     }
   };
-
-  const fetchBills = async (yr = selectedYear, mo = selectedMonth) => {
-    setLoading(true);
-    try {
-      let url = "/api/owner/billing";
-      if (mo && mo !== "all") {
-        url += `?month=${yr}-${mo}`;
-      }
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Failed to load invoice list");
-      const data = await res.json();
-      setBills(data);
-    } catch (err: any) {
-      error(err.message || "Failed to load generated bills");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchCustomers = async () => {
-    try {
-      const res = await fetch("/api/owner/customers?limit=100");
-      if (res.ok) {
-        const data = await res.json();
-        setCustomers(data.customers);
-      }
-    } catch (err) {
-      console.error("Error fetching customer list:", err);
-    }
-  };
-
-  useEffect(() => {
-    fetchBills(selectedYear, selectedMonth);
-    fetchCustomers();
-  }, [selectedYear, selectedMonth]);
 
   // Pre-fill customer ID if passed in URL
   useEffect(() => {
@@ -232,28 +225,12 @@ function BillingEngineContent() {
 
       const data = await res.json();
 
-      // Handle the "already billed, nothing new" case gracefully
-      if (res.ok && data.alreadyBilled) {
-        setPreviewData((prev: any) => ({
-          ...prev,
-          alreadyBilledResult: true,
-          existingBills: data.existingBills,
-          alreadyBilledDatesRange: data.alreadyBilledDatesRange,
-        }));
-        // Invalidate bills cache so list stays fresh
-        mutateBills();
-        return;
-      }
-
       if (!res.ok) throw new Error(data.error || "Failed to generate bill");
 
-      success(`Invoice ${data.billNumber} created successfully!`, "Bill Generated");
+      success(`Invoice ${data.billNumber} created successfully!`, "Bill Calculated");
 
       // Invalidate ALL related caches — new bill may affect customer advance balance too
-      await Promise.all([
-        mutateBills(),       // bills list
-        mutateCustomers(),   // customer advance balances may have changed
-      ]);
+      await revalidateBillingCaches(true);
 
       // Reset form
       setCustomerId("");
@@ -381,20 +358,9 @@ function BillingEngineContent() {
 
                 {previewData.unbilledConsumption === 0 ? (
                   <div className="space-y-4 py-2">
-                    <div className={`border p-4 rounded-xl text-xs space-y-1 ${previewData.alreadyBilledResult
-                        ? "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400"
-                        : "bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-400"
-                      }`}>
-                      <span className="font-bold block text-sm">
-                        {previewData.alreadyBilledResult
-                          ? "⚠️ No new meals added since last bill"
-                          : "No unbilled consumption found!"}
-                      </span>
-                      <span>
-                        {previewData.alreadyBilledResult
-                          ? "No new meals or extras have been added since the last bill was generated for this period. The existing bill(s) are shown below."
-                          : "All food consumption for this period has already been included in existing bills."}
-                      </span>
+                    <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-455 p-4 rounded-xl text-xs space-y-1">
+                      <span className="font-bold block text-sm">No unbilled consumption found!</span>
+                      <span>All food consumption for this period has already been included in existing bills.</span>
                     </div>
 
                     {previewData.existingBills && previewData.existingBills.length > 0 && (
@@ -687,8 +653,8 @@ function BillingEngineContent() {
             type="button"
             onClick={() => setSelectedMonth("all")}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${selectedMonth === "all"
-                ? "bg-primary text-white shadow-sm glow-primary"
-                : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+              ? "bg-primary text-white shadow-sm glow-primary"
+              : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
               }`}
           >
             All Months
@@ -699,8 +665,8 @@ function BillingEngineContent() {
               type="button"
               onClick={() => setSelectedMonth(m.value)}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${selectedMonth === m.value
-                  ? "bg-primary text-white shadow-sm glow-primary"
-                  : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-primary text-white shadow-sm glow-primary"
+                : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
                 }`}
             >
               {m.label}
@@ -788,8 +754,8 @@ function BillingEngineContent() {
                     <td className="px-6 py-4 text-rose-600">₹{b.finalTotal - b.amountPaid}</td>
                     <td className="px-6 py-4 capitalize">
                       <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${b.paymentStatus === "paid" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400" :
-                          b.paymentStatus === "partially_paid" ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400" :
-                            "bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-400"
+                        b.paymentStatus === "partially_paid" ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400" :
+                          "bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-400"
                         }`}>
                         {b.paymentStatus.replace("_", " ")}
                       </span>
@@ -841,8 +807,8 @@ function BillingEngineContent() {
                     </span>
                   </div>
                   <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${b.paymentStatus === "paid" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400" :
-                      b.paymentStatus === "partially_paid" ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400" :
-                        "bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-400"
+                    b.paymentStatus === "partially_paid" ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400" :
+                      "bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-400"
                     }`}>
                     {b.paymentStatus.replace("_", " ")}
                   </span>

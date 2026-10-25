@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, use } from "react";
+import React, { useState, useEffect, use, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/Toast";
 import {
@@ -23,6 +23,16 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { formatBillingPeriod } from "@/lib/date-utils";
+import useSWR, { mutate as globalMutate } from "swr";
+
+const fetcher = async <T,>(url: string): Promise<T> => {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error || "Failed to load customer data");
+  }
+  return response.json();
+};
 
 interface CustomerDetail {
   _id: string;
@@ -104,6 +114,12 @@ interface HolidayData {
   startDate: string;
   endDate: string;
   reason: string;
+  customerId?: string | { _id: string };
+}
+
+interface CustomerMealsData {
+  mealRecords: MealRecord[];
+  extraItems: ExtraMealItem[];
 }
 
 export default function CustomerProfile({ params }: { params: Promise<{ id: string }> }) {
@@ -111,16 +127,56 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
   const router = useRouter();
   const { success, error } = useToast();
 
-  const [activeTab, setActiveTab] = useState<"info" | "meals" | "bills" | "payments" | "holidays">("info");
-  const [loading, setLoading] = useState(true);
-  const [customer, setCustomer] = useState<CustomerDetail | null>(null);
+  const customerKey = `/api/owner/customers/${id}`;
+  const mealsKey = `${customerKey}/meals`;
+  const billsKey = `/api/owner/billing?customerId=${encodeURIComponent(id)}`;
+  const paymentsKey = `/api/owner/payments?customerId=${encodeURIComponent(id)}`;
+  const holidaysKey = "/api/owner/holidays";
+  const menuKey = "/api/owner/menu";
 
-  // Tab Data states
-  const [mealRecords, setMealRecords] = useState<MealRecord[]>([]);
-  const [extraItems, setExtraItems] = useState<ExtraMealItem[]>([]);
-  const [bills, setBills] = useState<BillData[]>([]);
-  const [payments, setPayments] = useState<PaymentData[]>([]);
-  const [holidays, setHolidays] = useState<HolidayData[]>([]);
+  const {
+    data: customer,
+    error: customerError,
+    isLoading: customerLoading,
+    mutate: mutateCustomer,
+  } = useSWR<CustomerDetail>(customerKey, fetcher, {
+    revalidateOnFocus: true,
+    dedupingInterval: 10000,
+  });
+  const { data: mealsData, isLoading: mealsLoading } = useSWR<CustomerMealsData>(mealsKey, fetcher, {
+    revalidateOnFocus: true,
+    dedupingInterval: 10000,
+  });
+  const { data: billsData, isLoading: billsLoading } = useSWR<BillData[]>(billsKey, fetcher, {
+    revalidateOnFocus: true,
+    dedupingInterval: 10000,
+  });
+  const { data: paymentsData, isLoading: paymentsLoading, mutate: mutatePayments } = useSWR<PaymentData[]>(paymentsKey, fetcher, {
+    revalidateOnFocus: true,
+    dedupingInterval: 10000,
+  });
+  const { data: holidaysData, isLoading: holidaysLoading, mutate: mutateHolidays } = useSWR<HolidayData[]>(holidaysKey, fetcher, {
+    revalidateOnFocus: true,
+    dedupingInterval: 30000,
+  });
+  const { data: menuData, isLoading: menuLoading } = useSWR<MenuItem[]>(menuKey, fetcher, {
+    revalidateOnFocus: true,
+    dedupingInterval: 30000,
+  });
+
+  const mealRecords = mealsData?.mealRecords ?? [];
+  const extraItems = mealsData?.extraItems ?? [];
+  const bills = billsData ?? [];
+  const payments = paymentsData ?? [];
+  const holidays = (holidaysData ?? []).filter((holiday) =>
+    typeof holiday.customerId === "string"
+      ? holiday.customerId === id
+      : holiday.customerId?._id === id
+  );
+  const menuItems = (menuData ?? []).filter((item) => item.isActive);
+  const loading = customerLoading || mealsLoading || billsLoading || paymentsLoading || holidaysLoading || menuLoading;
+
+  const [activeTab, setActiveTab] = useState<"info" | "meals" | "bills" | "payments" | "holidays">("info");
 
   // Edit fields states
   const [editName, setEditName] = useState("");
@@ -136,7 +192,6 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
   const [updating, setUpdating] = useState(false);
   const [editPricingType, setEditPricingType] = useState<"standard" | "special">("standard");
   const [editSpecialPrices, setEditSpecialPrices] = useState<Record<string, number>>({});
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
 
   // Add holiday fields
   const [holidayStart, setHolidayStart] = useState("");
@@ -145,6 +200,38 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
   const [addingHoliday, setAddingHoliday] = useState(false);
 
   const [updatingBillId, setUpdatingBillId] = useState<string | null>(null);
+  const initializedCustomerId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!customer || customer._id !== id || initializedCustomerId.current === id) return;
+
+    initializedCustomerId.current = id;
+    setEditName(customer.name);
+    setEditMobile(customer.mobile);
+    setEditAddress(customer.address);
+    setEditUsername(customer.username);
+    setEditNotes(customer.notes || "");
+    setEditDietPreference(customer.dietPreference || "both");
+    setEditStatus(customer.status);
+    setEditDefaultRate(customer.defaultRate || "");
+    setEditFixedDiscount(customer.fixedDiscount || 0);
+    setEditPricingType(customer.pricingType || "standard");
+    setEditSpecialPrices(customer.specialPrices || {});
+  }, [customer, id]);
+
+  useEffect(() => {
+    if (customerError && !customer) {
+      error(customerError.message || "Customer profile not found");
+      router.push("/owner/customers");
+    }
+  }, [customerError, customer, error, router]);
+
+  const revalidateCustomerListCaches = () =>
+    globalMutate(
+      (key) => typeof key === "string" && key.startsWith("/api/owner/customers?"),
+      undefined,
+      { revalidate: true }
+    );
 
   const handleUpdateBillStatus = async (billId: string, status: "paid" | "pending") => {
     setUpdatingBillId(billId);
@@ -160,18 +247,15 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
           status === "paid" ? "Invoice marked as paid" : "Invoice marked as pending",
           "Invoice Updated"
         );
-        // Refresh bills list
-        const billsRes = await fetch(`/api/owner/billing?customerId=${id}`);
-        if (billsRes.ok) {
-          const billsData = await billsRes.json();
-          setBills(billsData);
-        }
-        // Also refresh payments if any were recorded/deleted
-        const paymentsRes = await fetch(`/api/owner/payments?customerId=${id}`);
-        if (paymentsRes.ok) {
-          const paymentsData = await paymentsRes.json();
-          setPayments(paymentsData);
-        }
+        await Promise.all([
+          globalMutate(
+            (key) => typeof key === "string" && key.startsWith("/api/owner/billing"),
+            undefined,
+            { revalidate: true }
+          ),
+          mutatePayments(),
+          mutateCustomer(),
+        ]);
       } else {
         throw new Error();
       }
@@ -181,91 +265,6 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
       setUpdatingBillId(null);
     }
   };
-
-  const fetchCustomerData = async () => {
-    try {
-      const res = await fetch(`/api/owner/customers/${id}`);
-      if (!res.ok) throw new Error("Customer profile not found");
-      const data = await res.json();
-      setCustomer(data);
-      
-      // Initialize edit fields
-      setEditName(data.name);
-      setEditMobile(data.mobile);
-      setEditAddress(data.address);
-      setEditUsername(data.username);
-      setEditNotes(data.notes || "");
-      setEditDietPreference(data.dietPreference || "both");
-      setEditStatus(data.status);
-      setEditDefaultRate(data.defaultRate || "");
-      setEditFixedDiscount(data.fixedDiscount || 0);
-      setEditPricingType(data.pricingType || "standard");
-      setEditSpecialPrices(data.specialPrices || {});
-    } catch (err: any) {
-      error(err.message || "Failed to load customer profile");
-      router.push("/owner/customers");
-    }
-  };
-
-  const fetchTabHistory = async () => {
-    try {
-      // 1. Fetch meals history
-      const mealsRes = await fetch(`/api/owner/customers/${id}/meals`);
-      if (mealsRes.ok) {
-        const mealsData = await mealsRes.json();
-        setMealRecords(mealsData.mealRecords);
-        setExtraItems(mealsData.extraItems);
-      }
-
-      // 2. Fetch bills
-      const billsRes = await fetch(`/api/owner/billing?customerId=${id}`);
-      if (billsRes.ok) {
-        const billsData = await billsRes.json();
-        setBills(billsData);
-      }
-
-      // 3. Fetch payments
-      const paymentsRes = await fetch(`/api/owner/payments?customerId=${id}`);
-      if (paymentsRes.ok) {
-        const paymentsData = await paymentsRes.json();
-        setPayments(paymentsData);
-      }
-
-      // 4. Fetch holidays
-      const holidaysRes = await fetch("/api/owner/holidays");
-      if (holidaysRes.ok) {
-        const holidaysData = await holidaysRes.json();
-        // filter for this specific customer
-        const filtered = holidaysData.filter((h: any) => h.customerId && h.customerId._id === id);
-        setHolidays(filtered);
-      }
-    } catch (err) {
-      console.error("Error loading history tabs:", err);
-    }
-  };
-
-  const fetchMenuItems = async () => {
-    try {
-      const res = await fetch("/api/owner/menu");
-      if (res.ok) {
-        const data = await res.json();
-        setMenuItems(data.filter((item: MenuItem) => item.isActive));
-      }
-    } catch (err) {
-      console.error("Error loading menu:", err);
-    }
-  };
-
-  useEffect(() => {
-    async function loadAll() {
-      setLoading(true);
-      await fetchCustomerData();
-      await fetchTabHistory();
-      await fetchMenuItems();
-      setLoading(false);
-    }
-    loadAll();
-  }, [id]);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -304,8 +303,8 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
       if (!res.ok) throw new Error(data.error || "Failed to update profile");
 
       success("Profile updated successfully!");
-      setCustomer(data);
       setEditPassword("");
+      await Promise.all([mutateCustomer(), revalidateCustomerListCaches()]);
     } catch (err: any) {
       error(err.message || "Error updating profile");
     } finally {
@@ -319,6 +318,7 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
       const res = await fetch(`/api/owner/customers/${id}`, { method: "DELETE" });
       if (res.ok) {
         success("Customer profile deleted successfully");
+        await revalidateCustomerListCaches();
         router.push("/owner/customers");
       } else {
         throw new Error("Failed to delete customer");
@@ -356,14 +356,7 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
       setHolidayStart("");
       setHolidayEnd("");
       setHolidayReason("");
-      
-      // refresh holidays tab
-      const holidaysRes = await fetch("/api/owner/holidays");
-      if (holidaysRes.ok) {
-        const holidaysData = await holidaysRes.json();
-        const filtered = holidaysData.filter((h: any) => h.customerId && h.customerId._id === id);
-        setHolidays(filtered);
-      }
+      await mutateHolidays();
     } catch (err: any) {
       error(err.message || "Error recording holiday");
     } finally {
