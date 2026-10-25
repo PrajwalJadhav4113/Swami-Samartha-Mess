@@ -5,6 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/components/ui/Toast";
 import { Receipt, PlusCircle, Search, Filter, Calendar, FileText, Loader2, IndianRupee } from "lucide-react";
 import Link from "next/link";
+import useSWR, { mutate as globalMutate } from "swr";
+
+// Shared fetcher for SWR
+const fetcher = (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error("Fetch failed"); return r.json(); });
 
 interface CustomerSummary {
   _id: string;
@@ -28,14 +32,30 @@ interface BillItem {
   createdAt: string;
 }
 
+// SWR cache keys — centralised so invalidation is consistent
+const BILLS_KEY = "/api/owner/billing";
+const CUSTOMERS_KEY = "/api/owner/customers?limit=100";
+
 function BillingEngineContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { success, error } = useToast();
 
-  const [bills, setBills] = useState<BillItem[]>([]);
-  const [customers, setCustomers] = useState<CustomerSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ── SWR data fetching ──────────────────────────────────────────────────────
+  const { data: billsData, isLoading: billsLoading, mutate: mutateBills } =
+    useSWR<BillItem[]>(BILLS_KEY, fetcher, {
+      revalidateOnFocus: true,
+      dedupingInterval: 5000,
+    });
+
+  const { data: customersData, mutate: mutateCustomers } =
+    useSWR<{ customers: CustomerSummary[] }>(CUSTOMERS_KEY, fetcher, {
+      revalidateOnFocus: false,
+      dedupingInterval: 30000, // customers change infrequently
+    });
+
+  const bills = billsData ?? [];
+  const customers = customersData?.customers ?? [];
 
   // Form states
   const [customerId, setCustomerId] = useState("");
@@ -57,6 +77,14 @@ function BillingEngineContent() {
 
   const handleUpdateBillStatus = async (billId: string, status: "paid" | "pending") => {
     setUpdatingBillId(billId);
+    // Optimistic update — immediately reflect new status in UI
+    mutateBills(
+      (prev) =>
+        prev?.map((b) =>
+          b._id === billId ? { ...b, paymentStatus: status, amountPaid: status === "paid" ? b.finalTotal : 0 } : b
+        ),
+      false // don't revalidate yet
+    );
     try {
       const res = await fetch(`/api/owner/billing/${billId}`, {
         method: "PATCH",
@@ -69,47 +97,19 @@ function BillingEngineContent() {
           status === "paid" ? "Invoice marked as paid" : "Invoice marked as pending",
           "Invoice Updated"
         );
-        fetchBills();
+        // Invalidate & re-fetch to get server-authoritative data
+        mutateBills();
       } else {
         throw new Error();
       }
     } catch (err) {
       error("Failed to update payment status");
+      // Roll back optimistic update on failure
+      mutateBills();
     } finally {
       setUpdatingBillId(null);
     }
   };
-
-  const fetchBills = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/owner/billing");
-      if (!res.ok) throw new Error("Failed to load invoice list");
-      const data = await res.json();
-      setBills(data);
-    } catch (err: any) {
-      error(err.message || "Failed to load generated bills");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchCustomers = async () => {
-    try {
-      const res = await fetch("/api/owner/customers?limit=100");
-      if (res.ok) {
-        const data = await res.json();
-        setCustomers(data.customers);
-      }
-    } catch (err) {
-      console.error("Error fetching customer list:", err);
-    }
-  };
-
-  useEffect(() => {
-    fetchBills();
-    fetchCustomers();
-  }, []);
 
   // Pre-fill customer ID if passed in URL
   useEffect(() => {
@@ -186,23 +186,28 @@ function BillingEngineContent() {
 
       // Handle the "already billed, nothing new" case gracefully
       if (res.ok && data.alreadyBilled) {
-        // Show existing bills in the preview panel instead of an error
         setPreviewData((prev: any) => ({
           ...prev,
           alreadyBilledResult: true,
           existingBills: data.existingBills,
           alreadyBilledDatesRange: data.alreadyBilledDatesRange,
         }));
-        // Refresh the bill list so the user can see the existing bills
-        fetchBills();
+        // Invalidate bills cache so list stays fresh
+        mutateBills();
         return;
       }
 
       if (!res.ok) throw new Error(data.error || "Failed to generate bill");
 
       success(`Invoice ${data.billNumber} created successfully!`, "Bill Generated");
-      
-      // Reset
+
+      // Invalidate ALL related caches — new bill may affect customer advance balance too
+      await Promise.all([
+        mutateBills(),       // bills list
+        mutateCustomers(),   // customer advance balances may have changed
+      ]);
+
+      // Reset form
       setCustomerId("");
       setStartDate("");
       setEndDate("");
@@ -212,9 +217,7 @@ function BillingEngineContent() {
       setShowAddForm(false);
       setShowPreview(false);
       setPreviewData(null);
-      
-      fetchBills();
-      
+
       // Clean query params
       if (searchParams.get("customerId")) {
         router.replace("/owner/billing");
@@ -228,6 +231,7 @@ function BillingEngineContent() {
 
 
   // Filter bills list locally
+  const loading = billsLoading;
   const filteredBills = bills.filter((b) => {
     const custName = b.customerId?.name || "";
     const billNum = b.billNumber || "";
