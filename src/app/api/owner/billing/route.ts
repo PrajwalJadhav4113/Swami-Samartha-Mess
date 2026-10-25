@@ -99,6 +99,56 @@ function formatIntervals(intervals: DateInterval[]): string {
     .join(", ");
 }
 
+export interface MealTallyItem {
+  quantity: number;
+  sumRates: number;
+}
+
+export interface MealTallyMap {
+  morning_full: MealTallyItem;
+  morning_half: MealTallyItem;
+  night_full: MealTallyItem;
+  night_half: MealTallyItem;
+}
+
+// Helper to calculate meal tally directly from mealRecords using reduction (v2)
+export function calculateMealTallyV2(
+  mealRecords: Array<any>,
+  isHoliday: (date: Date) => boolean
+): MealTallyMap {
+  return mealRecords.reduce(
+    (tally: MealTallyMap, rec: any) => {
+      if (isHoliday(new Date(rec.date))) {
+        return tally;
+      }
+
+      if (rec.morningMeal === "full") {
+        tally.morning_full.quantity += 1;
+        tally.morning_full.sumRates += rec.morningPrice;
+      } else if (rec.morningMeal === "half") {
+        tally.morning_half.quantity += 1;
+        tally.morning_half.sumRates += rec.morningPrice;
+      }
+
+      if (rec.nightMeal === "full") {
+        tally.night_full.quantity += 1;
+        tally.night_full.sumRates += rec.nightPrice;
+      } else if (rec.nightMeal === "half") {
+        tally.night_half.quantity += 1;
+        tally.night_half.sumRates += rec.nightPrice;
+      }
+
+      return tally;
+    },
+    {
+      morning_full: { quantity: 0, sumRates: 0 },
+      morning_half: { quantity: 0, sumRates: 0 },
+      night_full: { quantity: 0, sumRates: 0 },
+      night_half: { quantity: 0, sumRates: 0 },
+    }
+  );
+}
+
 export async function GET(request: Request) {
   try {
     if (!(await isOwner())) {
@@ -285,6 +335,24 @@ export async function POST(request: Request) {
       return details;
     };
 
+    // Version 2: using calculateMealTallyV2 (reduction-based, directly from records)
+    const aggregateMealsV2 = (records: typeof allMealRecords) => {
+      const mealTally = calculateMealTallyV2(records, isHoliday);
+      const details: any[] = [];
+      (Object.entries(mealTally) as [string, MealTallyItem][]).forEach(([type, info]) => {
+        if (info.quantity > 0) {
+          const rate = Math.round((info.sumRates / info.quantity) * 100) / 100;
+          details.push({
+            type,
+            quantity: info.quantity,
+            rate,
+            amount: info.quantity * rate,
+          });
+        }
+      });
+      return details;
+    };
+
     // Reusable function to aggregate extra items into details format
     const aggregateExtras = (items: typeof allExtraItems) => {
       const extraTallyMap = new Map<string, { quantity: number; price: number }>();
@@ -312,19 +380,24 @@ export async function POST(request: Request) {
     };
 
     // Aggregate tallies
-    const unbilledMealDetails = aggregateMeals(unbilledMealRecords);
+    // NOTE: Using aggregateMealsV2 instead of aggregateMeals (v1).
+    // Why V2:
+    // 1. Eliminates the redundant outer calendar-dates loop and intermediary date-keyed Map lookup.
+    // 2. Directly performs reduction on actual DB meal records via calculateMealTallyV2, skipping holidays cleanly.
+    // 3. Faster execution with O(N_records) instead of O(D_dates * Map_lookup) complexity.
+    const unbilledMealDetails = aggregateMealsV2(unbilledMealRecords);
     const unbilledExtraItemsDetails = aggregateExtras(unbilledExtraItems);
     const unbilledMealsSum = unbilledMealDetails.reduce((sum, m) => sum + m.amount, 0);
     const unbilledExtrasSum = unbilledExtraItemsDetails.reduce((sum, e) => sum + e.amount, 0);
     const unbilledConsumption = unbilledMealsSum + unbilledExtrasSum;
 
-    const billedMealDetails = aggregateMeals(billedMealRecords);
+    const billedMealDetails = aggregateMealsV2(billedMealRecords);
     const billedExtraItemsDetails = aggregateExtras(billedExtraItems);
     const billedMealsSum = billedMealDetails.reduce((sum, m) => sum + m.amount, 0);
     const billedExtrasSum = billedExtraItemsDetails.reduce((sum, e) => sum + e.amount, 0);
     const alreadyBilled = billedMealsSum + billedExtrasSum;
 
-    const totalMealDetails = aggregateMeals(allMealRecords);
+    const totalMealDetails = aggregateMealsV2(allMealRecords);
     const totalExtraItemsDetails = aggregateExtras(allExtraItems);
     const totalMealsSum = totalMealDetails.reduce((sum, m) => sum + m.amount, 0);
     const totalExtrasSum = totalExtraItemsDetails.reduce((sum, e) => sum + e.amount, 0);
@@ -383,13 +456,26 @@ export async function POST(request: Request) {
       });
     }
 
-    // 9. Generation Mode validation: Do not create zero-value consumption bills
+    // 9. Generation Mode validation: Check if there is new unbilled consumption
     if (unbilledMealDetails.length === 0 && unbilledExtraItemsDetails.length === 0) {
+      // No new meals/extras since last bill — return existing bill(s) for this period
+      const existingBillsForPeriod = await Bill.find({
+        customerId,
+        billingPeriodStart: { $lte: end },
+        billingPeriodEnd: { $gte: start },
+      })
+        .populate("customerId", "name mobile address pricingType")
+        .sort({ createdAt: -1 });
+
       return NextResponse.json(
         {
-          error: "No unbilled consumption found. All consumption for this period has already been included in existing bills.",
+          alreadyBilled: true,
+          message:
+            "No new meals or extras have been added since the last bill was generated for this period. Showing the existing bill(s).",
+          existingBills: existingBillsForPeriod,
+          alreadyBilledDatesRange,
         },
-        { status: 400 }
+        { status: 200 }
       );
     }
 

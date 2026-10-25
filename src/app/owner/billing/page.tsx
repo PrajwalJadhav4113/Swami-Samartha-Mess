@@ -183,9 +183,24 @@ function BillingEngineContent() {
       });
 
       const data = await res.json();
+
+      // Handle the "already billed, nothing new" case gracefully
+      if (res.ok && data.alreadyBilled) {
+        // Show existing bills in the preview panel instead of an error
+        setPreviewData((prev: any) => ({
+          ...prev,
+          alreadyBilledResult: true,
+          existingBills: data.existingBills,
+          alreadyBilledDatesRange: data.alreadyBilledDatesRange,
+        }));
+        // Refresh the bill list so the user can see the existing bills
+        fetchBills();
+        return;
+      }
+
       if (!res.ok) throw new Error(data.error || "Failed to generate bill");
 
-      success(`Invoice ${data.billNumber} created successfully!`, "Bill Calculated");
+      success(`Invoice ${data.billNumber} created successfully!`, "Bill Generated");
       
       // Reset
       setCustomerId("");
@@ -210,6 +225,7 @@ function BillingEngineContent() {
       setGenerating(false);
     }
   };
+
 
   // Filter bills list locally
   const filteredBills = bills.filter((b) => {
@@ -313,9 +329,21 @@ function BillingEngineContent() {
 
                 {previewData.unbilledConsumption === 0 ? (
                   <div className="space-y-4 py-2">
-                    <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-455 p-4 rounded-xl text-xs space-y-1">
-                      <span className="font-bold block text-sm">No unbilled consumption found!</span>
-                      <span>All food consumption for this period has already been included in existing bills.</span>
+                    <div className={`border p-4 rounded-xl text-xs space-y-1 ${
+                      previewData.alreadyBilledResult
+                        ? "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400"
+                        : "bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-400"
+                    }`}>
+                      <span className="font-bold block text-sm">
+                        {previewData.alreadyBilledResult
+                          ? "⚠️ No new meals added since last bill"
+                          : "No unbilled consumption found!"}
+                      </span>
+                      <span>
+                        {previewData.alreadyBilledResult
+                          ? "No new meals or extras have been added since the last bill was generated for this period. The existing bill(s) are shown below."
+                          : "All food consumption for this period has already been included in existing bills."}
+                      </span>
                     </div>
 
                     {previewData.existingBills && previewData.existingBills.length > 0 && (
@@ -345,6 +373,7 @@ function BillingEngineContent() {
                       </div>
                     )}
                   </div>
+
                 ) : (
                   <div className="space-y-4">
                     {/* Itemized Table */}
