@@ -6,7 +6,7 @@ import { useToast } from "@/components/ui/Toast";
 import { Receipt, PlusCircle, Search, Filter, Calendar, FileText, Loader2, IndianRupee } from "lucide-react";
 import Link from "next/link";
 import { formatBillingPeriod } from "@/lib/date-utils";
-import useSWR, { mutate as globalMutate } from "swr";
+import useSWR from "swr";
 
 const fetcher = async <T,>(url: string): Promise<T> => {
   const response = await fetch(url, { cache: "no-store" });
@@ -80,10 +80,12 @@ function BillingEngineContent() {
     revalidateOnFocus: true,
     dedupingInterval: 5000,
   });
-  const { data: customersData } = useSWR<{ customers: CustomerSummary[] }>(CUSTOMERS_KEY, fetcher, {
-    revalidateOnFocus: false,
-    dedupingInterval: 30000,
-  });
+
+  const { data: customersData, mutate: mutateCustomers } = useSWR<{ customers: CustomerSummary[] }>(
+    CUSTOMERS_KEY,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 30000 }
+  );
 
   const bills = billsData ?? [];
   const customers = customersData?.customers ?? [];
@@ -91,16 +93,6 @@ function BillingEngineContent() {
   useEffect(() => {
     if (billsError) error(billsError.message || "Failed to load generated bills");
   }, [billsError, error]);
-
-  const revalidateBillingCaches = async (includeCustomers = false) => {
-    const revalidations = [
-      globalMutate(
-        (key) => typeof key === "string" && (key === BILLS_KEY || key.startsWith(`${BILLS_KEY}?`))
-      ),
-    ];
-    if (includeCustomers) revalidations.push(globalMutate(CUSTOMERS_KEY));
-    await Promise.all(revalidations);
-  };
 
   const monthsList = [
     { value: "01", label: "January" },
@@ -125,7 +117,7 @@ function BillingEngineContent() {
         prev?.map((b) =>
           b._id === billId ? { ...b, paymentStatus: status, amountPaid: status === "paid" ? b.finalTotal : 0 } : b
         ),
-      { revalidate: false }
+      false // don't revalidate yet
     );
     try {
       const res = await fetch(`/api/owner/billing/${billId}`, {
@@ -139,14 +131,14 @@ function BillingEngineContent() {
           status === "paid" ? "Invoice marked as paid" : "Invoice marked as pending",
           "Invoice Updated"
         );
-        await revalidateBillingCaches();
+        mutateBills();
       } else {
         throw new Error();
       }
     } catch (err) {
       error("Failed to update payment status");
       // Roll back optimistic update on failure
-      await revalidateBillingCaches();
+      mutateBills();
     } finally {
       setUpdatingBillId(null);
     }
@@ -225,12 +217,28 @@ function BillingEngineContent() {
 
       const data = await res.json();
 
+      // Handle the "already billed, nothing new" case gracefully
+      if (res.ok && data.alreadyBilled) {
+        setPreviewData((prev: any) => ({
+          ...prev,
+          alreadyBilledResult: true,
+          existingBills: data.existingBills,
+          alreadyBilledDatesRange: data.alreadyBilledDatesRange,
+        }));
+        // Invalidate bills cache so list stays fresh
+        mutateBills();
+        return;
+      }
+
       if (!res.ok) throw new Error(data.error || "Failed to generate bill");
 
-      success(`Invoice ${data.billNumber} created successfully!`, "Bill Calculated");
+      success(`Invoice ${data.billNumber} created successfully!`, "Bill Generated");
 
       // Invalidate ALL related caches — new bill may affect customer advance balance too
-      await revalidateBillingCaches(true);
+      await Promise.all([
+        mutateBills(),       // bills list
+        mutateCustomers(),   // customer advance balances may have changed
+      ]);
 
       // Reset form
       setCustomerId("");
@@ -358,9 +366,20 @@ function BillingEngineContent() {
 
                 {previewData.unbilledConsumption === 0 ? (
                   <div className="space-y-4 py-2">
-                    <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-455 p-4 rounded-xl text-xs space-y-1">
-                      <span className="font-bold block text-sm">No unbilled consumption found!</span>
-                      <span>All food consumption for this period has already been included in existing bills.</span>
+                    <div className={`border p-4 rounded-xl text-xs space-y-1 ${previewData.alreadyBilledResult
+                      ? "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400"
+                      : "bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-400"
+                      }`}>
+                      <span className="font-bold block text-sm">
+                        {previewData.alreadyBilledResult
+                          ? "⚠️ No new meals added since last bill"
+                          : "No unbilled consumption found!"}
+                      </span>
+                      <span>
+                        {previewData.alreadyBilledResult
+                          ? "No new meals or extras have been added since the last bill was generated for this period. The existing bill(s) are shown below."
+                          : "All food consumption for this period has already been included in existing bills."}
+                      </span>
                     </div>
 
                     {previewData.existingBills && previewData.existingBills.length > 0 && (
