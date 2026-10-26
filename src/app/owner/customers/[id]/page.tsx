@@ -91,6 +91,7 @@ interface BillData {
   finalTotal: number;
   amountPaid: number;
   paymentStatus: "pending" | "paid" | "partially_paid";
+  status?: "ACTIVE" | "SUPERSEDED" | "CANCELLED";
   createdAt: string;
 }
 
@@ -129,7 +130,7 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
 
   const customerKey = `/api/owner/customers/${id}`;
   const mealsKey = `${customerKey}/meals`;
-  const billsKey = `/api/owner/billing?customerId=${encodeURIComponent(id)}`;
+  const billsKey = `/api/owner/billing?customerId=${encodeURIComponent(id)}&includeSuperseded=true`;
   const paymentsKey = `/api/owner/payments?customerId=${encodeURIComponent(id)}`;
   const holidaysKey = "/api/owner/holidays";
   const menuKey = "/api/owner/menu";
@@ -469,7 +470,7 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
           >
             {tab === "info" && "Profile Details"}
             {tab === "meals" && "Meal History"}
-            {tab === "bills" && "Invoices"}
+            {tab === "bills" && "Bill History"}
             {tab === "payments" && "Payment History"}
             {tab === "holidays" && "Registered Leaves"}
           </button>
@@ -751,13 +752,13 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
           </div>
         )}
 
-        {/* Bills/Invoices Tab */}
+        {/* Bill History Tab */}
         {activeTab === "bills" && (
           <div className="bg-card border border-border p-6 rounded-2xl shadow-sm">
             <div className="flex items-center justify-between gap-4 mb-4">
               <h3 className="font-bold text-base flex items-center gap-2">
                 <Receipt className="h-5 w-5 text-emerald-500" />
-                <span>Generated Monthly Invoices</span>
+                <span>Bill History</span>
               </h3>
               <Link
                 href={`/owner/billing?customerId=${id}`}
@@ -767,6 +768,9 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
                 <span>Generate Bill</span>
               </Link>
             </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Current and previous bills, including bills replaced by a newer invoice.
+            </p>
 
             {bills.length === 0 ? (
               <p className="text-xs text-muted-foreground py-6 text-center">No bills generated for this customer yet.</p>
@@ -786,7 +790,18 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
                   <tbody className="divide-y divide-border font-medium">
                     {bills.map((b) => (
                       <tr key={b._id} className="hover:bg-muted/40 transition">
-                        <td className="py-3.5 font-bold">{b.billNumber}</td>
+                        <td className="py-3.5 font-bold">
+                          {b.billNumber}
+                          {(b.status === "SUPERSEDED" || b.status === "CANCELLED") && (
+                            <span className={`ml-2 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                              b.status === "SUPERSEDED"
+                                ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400"
+                                : "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                            }`}>
+                              {b.status === "SUPERSEDED" ? "Superseded" : "Cancelled"}
+                            </span>
+                          )}
+                        </td>
                         <td className="py-3.5 text-xs text-muted-foreground">
                           {formatBillingPeriod(b.billingPeriodStart, b.billingPeriodEnd)}
                         </td>
@@ -810,7 +825,7 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
                             <span>View Bill</span>
                           </Link>
                           
-                          {b.paymentStatus !== "paid" ? (
+                          {b.status !== "SUPERSEDED" && b.status !== "CANCELLED" && (b.paymentStatus !== "paid" ? (
                             <button
                               disabled={updatingBillId === b._id}
                               onClick={() => handleUpdateBillStatus(b._id, "paid")}
@@ -826,7 +841,7 @@ export default function CustomerProfile({ params }: { params: Promise<{ id: stri
                             >
                               {updatingBillId === b._id ? "..." : "Reset"}
                             </button>
-                          )}
+                          ))}
                         </td>
                       </tr>
                     ))}

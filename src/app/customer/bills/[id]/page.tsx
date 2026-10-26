@@ -280,10 +280,32 @@ export default function CustomerBillDetailPage({ params }: { params: Promise<{ i
 
   if (!bill) return null;
 
-  const mealSubtotal = bill.mealDetails.reduce((sum, m) => sum + m.amount, 0);
-  const extrasSubtotal = bill.extraItemsDetails.reduce((sum, e) => sum + e.amount, 0);
-  
-  const creditOverpayment = bill.amountPaid > bill.finalTotal ? bill.amountPaid - bill.finalTotal : 0;
+  const halfTiffinCount = bill.mealDetails
+    .filter((meal) => meal.type.endsWith("_half"))
+    .reduce((sum, meal) => sum + meal.quantity, 0);
+  const fullTiffinCount = bill.mealDetails
+    .filter((meal) => meal.type.endsWith("_full"))
+    .reduce((sum, meal) => sum + meal.quantity, 0);
+  const extraItemQuantities = bill.extraItemsDetails.reduce<Record<string, { name: string; quantity: number }>>(
+    (items, item) => {
+      const normalizedName = item.name.trim().toLowerCase();
+      const name = normalizedName.includes("chapati")
+        ? "Chapati"
+        : normalizedName.includes("bhaji") || normalizedName.includes("bhaju")
+          ? "Bhaji"
+          : item.name.trim();
+      const key = name.toLowerCase();
+      const entry = items[key] ?? (items[key] = { name, quantity: 0 });
+      entry.quantity += item.quantity;
+      return items;
+    },
+    {}
+  );
+  const extraItemsSummary = Object.values(extraItemQuantities).sort((a, b) => {
+    const priority = (name: string) => name.toLowerCase() === "chapati" ? 0 : name.toLowerCase() === "bhaji" ? 1 : 2;
+    return priority(a.name) - priority(b.name) || a.name.localeCompare(b.name);
+  });
+
   const outstanding = bill.amountPaid > bill.finalTotal ? 0 : bill.finalTotal - bill.amountPaid;
 
   return (
@@ -506,72 +528,55 @@ export default function CustomerBillDetailPage({ params }: { params: Promise<{ i
                 Notes: {bill.notes}
               </div>
             )}
+
+            <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Meal & Extra Item Count</h4>
+              <div className="space-y-2 text-sm font-semibold">
+                <div className="flex items-center justify-between">
+                  <span>Half Tiffins</span>
+                  <span>{halfTiffinCount}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Full Tiffins</span>
+                  <span>{fullTiffinCount}</span>
+                </div>
+              </div>
+              <div className="border-t border-border pt-3 space-y-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Extra Items</span>
+                {extraItemsSummary.length > 0 ? (
+                  <div className="space-y-2 text-sm font-semibold">
+                    {extraItemsSummary.map((item) => (
+                      <div key={item.name} className="flex items-center justify-between">
+                        <span>{item.name}</span>
+                        <span>{item.quantity}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No extra items</p>
+                )}
+              </div>
+            </div>
           </div>
 
-          {/* Calculations */}
-          <div className="md:col-span-6 flex flex-col gap-2.5 text-xs md:text-sm font-semibold ml-auto w-full max-w-xs">
+          {/* Compact Calculations */}
+          <div className="md:col-span-6 flex flex-col gap-4 text-xs md:text-sm font-semibold ml-auto w-full max-w-xs rounded-2xl border border-border bg-card p-4">
             <div className="flex items-center justify-between text-muted-foreground">
-              <span>Previous Balance Due:</span>
+              <span>Previous Bill Balance (Unpaid):</span>
               <span>₹{bill.previousBalance}</span>
             </div>
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span>Tiffin Meals Subtotal:</span>
-              <span>₹{bill.mealDetails.reduce((sum, m) => sum + m.amount, 0)}</span>
+            <div className="flex items-center justify-between text-emerald-600">
+              <span>Advance Payment Deducted:</span>
+              <span>- ₹{bill.advancePayment}</span>
             </div>
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span>Extra Items Subtotal:</span>
-              <span>₹{extrasSubtotal}</span>
-            </div>
-
-            {bill.discount > 0 && (
-              <div className="flex items-center justify-between text-emerald-600">
-                <span>Discount Applied:</span>
-                <span>- ₹{bill.discount}</span>
-              </div>
-            )}
-
-            {bill.advancePayment > 0 && (
-              <div className="flex items-center justify-between text-emerald-600">
-                <span>Advance Credit Applied:</span>
-                <span>- ₹{bill.advancePayment}</span>
-              </div>
-            )}
-
-            <div className="border-t border-border my-1.5" />
-
-            {bill.isAdjusted && (
-              <>
-                <div className="flex items-center justify-between text-muted-foreground text-xs">
-                  <span>Original Total:</span>
-                  <span>₹{bill.originalTotal}</span>
-                </div>
-                <div className={`flex items-center justify-between text-xs font-bold ${bill.adjustmentAmount !== undefined && bill.adjustmentAmount >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  <span>Adjustment:</span>
-                  <span>{bill.adjustmentAmount !== undefined && bill.adjustmentAmount >= 0 ? '+' : ''}₹{bill.adjustmentAmount}</span>
-                </div>
-              </>
-            )}
-
-            <div className="flex items-center justify-between text-base font-black">
-              <span>Amount Payable:</span>
+            <div className="flex items-center justify-between border-t border-dashed border-border pt-3 text-base font-black text-rose-600">
+              <span>
+                Total Amount
+                <span className="mt-1 block text-[10px] font-semibold text-muted-foreground">
+                  Paid ₹{bill.amountPaid} · Unpaid ₹{outstanding}
+                </span>
+              </span>
               <span>₹{bill.finalTotal}</span>
-            </div>
-
-            <div className="flex items-center justify-between text-muted-foreground text-xs">
-              <span>Bill Payment After Generation:</span>
-              <span>₹{bill.amountPaid}</span>
-            </div>
-
-            {creditOverpayment > 0 && (
-              <div className="flex items-center justify-between text-emerald-600 text-xs font-bold">
-                <span>Credit / Overpayment:</span>
-                <span>₹{creditOverpayment}</span>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between text-base font-black text-rose-600 border-t border-dashed border-border pt-1.5">
-              <span>Net Balance Due:</span>
-              <span>₹{outstanding}</span>
             </div>
           </div>
         </div>
